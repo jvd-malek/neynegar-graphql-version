@@ -6,9 +6,9 @@ const mutations = gql`
     createUser(input: UserInput!): User
     updateUser(id: ID!, input: UserInput!): User
     deleteUser(id: ID!): Boolean
-    addToBasket(userId: ID!, productId: ID!, count: Int!): User
-    removeFromBasket(userId: ID!, productId: ID!): User
-    addToFavorite(userId: ID!, productId: ID!): User
+    addToBasket(productId: ID!, count: Int!): User
+    removeFromBasket(productId: ID!): User
+    addToFavorite(productId: ID!): User
     removeFromFavorite(userId: ID!, productId: ID!): User
     addToReadingList(userId: ID!, articleId: ID!): User
     removeFromReadingList(userId: ID!, articleId: ID!): User
@@ -16,10 +16,14 @@ const mutations = gql`
     addDiscount(userId: ID!, code: String!, discount: Int!, date: Float!): User
     removeDiscount(userId: ID!, code: String!): User
     updateBasketCount(userId: ID!, productId: ID!, count: Int!): User
+    updateCourseProgress( courseId: ID!, progress: Int!): User
+    sendVerificationCode(phone: String!, name: String!): Boolean
+    verifyCode(phone: String!, code: String!, name: String!, basket: [BasketInput]): AuthPayload
+    updateUserStatus(status: String!): User
 
     # Product Mutations
     createProduct(input: ProductInput!): Product
-    updateProduct(id: ID!, input: ProductInput!): Product
+    updateProduct(id: ID!, input: UpdateProductInput!): Product
     updateProductImages(id: ID!, input: ProductImageInput!): Product
     deleteProduct(id: ID!): Boolean
     updateProductPrice(id: ID!, price: Float!): Product
@@ -34,12 +38,14 @@ const mutations = gql`
     updateOrderStatus(id: ID!, status: String!): Order
     updateOrderPayment(id: ID!, paymentId: String!): Order
     updateOrderPostVerify(id: ID!, postVerify: String!): Order
+    verifyOrderPayment(orderId: ID!): Order
 
     # Checkout Mutations
     createCheckout(input: CheckoutInput!): Checkout
     updateCheckout(id: ID!, input: CheckoutInput!): Checkout
     deleteCheckout(id: ID!): Boolean
     convertCheckoutToOrder(checkoutId: ID!): Order
+    createCheckoutPayment(shipment: String!, discount: Float!): CheckoutPayment
 
     # Comment Mutations
     createComment(input: CommentInput!): Comment
@@ -63,11 +69,12 @@ const mutations = gql`
     updateAuthor(id: ID!, input: AuthorInput!): Author
     deleteAuthor(id: ID!): Boolean
 
-    # Code Mutations
-    createCode(input: CodeInput!): Code
-    updateCode(id: ID!, input: CodeInput!): Code
-    deleteCode(id: ID!): Boolean
-    verifyCode(phone: String!, code: String!): Boolean
+    # Course Mutations
+    createCourse(input: CourseInput!): Course
+    updateCourse(id: ID!, input: CourseInput!): Course
+    deleteCourse(id: ID!): Boolean
+    addSectionToCourse(courseId: ID!, section: SectionsInput!): Course
+    updateCourseViews(courseId: ID!, views: Int!): Course
 
     # Link Mutations
     createLink(input: LinkInput!): Link
@@ -75,12 +82,22 @@ const mutations = gql`
     deleteLink(id: ID!): Boolean
     updateLinkSort(id: ID!, sort: [Int]!): Link
 
+    # Group Discount Mutations
+    createGroupDiscount(input: GroupDiscountInput!): GroupDiscount
+    updateGroupDiscount(id: ID!, input: GroupDiscountInput!): GroupDiscount
+    deleteGroupDiscount(id: ID!): Boolean
+
     # Ticket Mutations
     createTicket(input: TicketInput!): Ticket
     updateTicket(id: ID!, input: TicketInput!): Ticket
     deleteTicket(id: ID!): Boolean
     updateTicketStatus(id: ID!, status: String!): Ticket
     addTicketResponse(id: ID!, response: String!): Ticket
+
+    # ShippingCost Mutations
+    createShippingCost(input: ShippingCostInput!): ShippingCost
+    updateShippingCost(id: ID!, input: ShippingCostInput!): ShippingCost
+    deleteShippingCost(id: ID!): Boolean
   }
 `;
 

@@ -32,7 +32,14 @@ const queries = gql`
     productsByStatus(status: String!): [Product]
     homePageData: HomePageData
     suggestedProducts(majorCat: String!, minorCat: String, cat: String): [Product]
-    offer: [Product]
+    offer(page: Int, limit: Int): PaginatedProducts!
+    localBasket(basket: [BasketInput!]!): UserFullBasket
+
+    outOfStockProducts: [Product]
+
+    # Group Discount Queries
+    groupDiscounts(majorCat: String, minorCat: String, brand: String): [GroupDiscount]
+    activeGroupDiscounts: [GroupDiscount]
 
     # Order Queries
     orders(page: Int, limit: Int, search: String): PaginatedOrders
@@ -78,10 +85,10 @@ const queries = gql`
     author(id: ID!): Author
     authorByName(firstname: String!, lastname: String!): Author
 
-    # Code Queries
-    codes: [Code]
-    code(id: ID!): Code
-    codeByPhone(phone: String!): Code
+    # Course Queries
+    courses(page: Int, limit: Int, search: String): PaginatedCourses!
+    course(id: ID!): Course
+    coursesByCategory(category: String!): [Course]
 
     # Link Queries
     links: [Link]
@@ -92,7 +99,15 @@ const queries = gql`
     tickets(page: Int, limit: Int, search: String): PaginatedTickets
     ticket(id: ID!): Ticket
     ticketsByUser(userId: ID!, page: Int, limit: Int): PaginatedTickets
-    ticketsByStatus(status: String!): [Ticket]
+    ticketsByStatus(status: [String]!): [Ticket]
+
+    # ShippingCost Queries
+    shippingCosts: [ShippingCost]
+    shippingCost(id: ID!): ShippingCost
+    shippingCostByType(type: String!): ShippingCost
+
+    # Province Queries
+    provinces: [Province]
   }
 `;
 

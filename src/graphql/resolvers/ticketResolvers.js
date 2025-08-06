@@ -8,12 +8,12 @@ const ticketResolvers = {
         status: user.status,
         name: user.name
       } : 'No user');
-      
+
       if (!user) {
         console.log('Access denied: No user');
         throw new Error("Unauthorized");
       }
-      
+
       if (user.status !== "admin" && user.status !== "owner") {
         console.log('Access denied: Invalid user status:', user.status);
         throw new Error("Unauthorized");
@@ -64,11 +64,10 @@ const ticketResolvers = {
           select: '_id name phone status'
         });
     },
-    
+
     ticketsByUser: async (_, { userId, page = 1, limit = 10 }, { user }) => {
       if (!user) throw new Error("Unauthorized");
-      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
-      
+
       try {
         const skip = (page - 1) * limit;
         const [tickets, total] = await Promise.all([
@@ -110,6 +109,7 @@ const ticketResolvers = {
       if (!user) throw new Error("Unauthorized");
       const ticket = new Ticket({
         ...input,
+        userId: user._id,
         status: 'در انتظار بررسی',
         response: ''
       });

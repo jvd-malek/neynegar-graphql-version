@@ -16,7 +16,7 @@ const checkoutSchema = new mongoose.Schema({
   submition: {
     type: String,
     required: [true, 'نحوه ارسال الزامی است'],
-    minLength: [4, 'نحوه ارسال باید حداقل 4 کاراکتر باشد'],
+    minLength: [2, 'نحوه ارسال باید حداقل 2 کاراکتر باشد'],
     maxLength: [60, 'نحوه ارسال نمی‌تواند بیشتر از 60 کاراکتر باشد'],
     trim: true
   },

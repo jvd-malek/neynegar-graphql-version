@@ -5,10 +5,13 @@ const checkoutResolvers = require('./checkoutResolvers');
 const commentResolvers = require('./commentResolvers');
 const articleResolvers = require('./articleResolvers');
 const authorResolvers = require('./authorResolvers');
-const codeResolvers = require('./codeResolvers');
+const courseResolvers = require('./courseResolvers');
 const linkResolvers = require('./linkResolvers');
 const ticketResolvers = require('./ticketResolvers');
 const scalarResolvers = require('./scalarResolvers');
+const groupDiscountResolvers = require('./groupDiscountResolvers');
+const shippingCostResolvers = require('./shippingCostResolvers');
+const provinceResolvers = require('./provinceResolvers');
 
 const resolvers = {
   ...scalarResolvers,
@@ -20,9 +23,12 @@ const resolvers = {
     ...commentResolvers.Query,
     ...articleResolvers.Query,
     ...authorResolvers.Query,
-    ...codeResolvers.Query,
+    ...courseResolvers.Query,
     ...linkResolvers.Query,
-    ...ticketResolvers.Query
+    ...ticketResolvers.Query,
+    ...groupDiscountResolvers.Query,
+    ...shippingCostResolvers.Query,
+    ...provinceResolvers.Query
   },
   Mutation: {
     ...userResolvers.Mutation,
@@ -32,9 +38,11 @@ const resolvers = {
     ...commentResolvers.Mutation,
     ...articleResolvers.Mutation,
     ...authorResolvers.Mutation,
-    ...codeResolvers.Mutation,
+    ...courseResolvers.Mutation,
     ...linkResolvers.Mutation,
-    ...ticketResolvers.Mutation
+    ...ticketResolvers.Mutation,
+    ...groupDiscountResolvers.Mutation,
+    ...shippingCostResolvers.Mutation
   }
 };
 

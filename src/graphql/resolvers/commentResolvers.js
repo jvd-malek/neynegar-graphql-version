@@ -64,6 +64,7 @@ const commentResolvers = {
       const [comments, total] = await Promise.all([
         Comment.find({ userId })
           .populate("userId")
+          .populate("productId")
           .populate("replies.userId")
           .skip(skip)
           .limit(limit)

@@ -29,7 +29,7 @@ Production mode:
 npm start
 ```
 
-The GraphQL playground will be available at: http://localhost:4000/graphql
+The GraphQL playground will be available at: https://api.neynegar1.ir/graphql
 
 ## API Examples
 

@@ -11,7 +11,7 @@ module.exports = async (req, res, next) => {
         const jwtPayload = jwt.verify(token, process.env.JWT_KEY)
         if (isValidObjectId(jwtPayload.id)) {
             const user = await userModel.findById(jwtPayload.id)
-
+                
             req.user = user
             return next()
         } else {

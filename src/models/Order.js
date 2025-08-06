@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const ShippingCost = require('./ShippingCost');
 
 const orderSchema = new mongoose.Schema({
   products: [{
@@ -97,15 +98,21 @@ orderSchema.virtual('calculatedTotalWeight').get(async function () {
 });
 
 // Add virtual for shipping cost calculation
-orderSchema.virtual('calculatedShippingCost').get(function () {
-  return (this.totalWeight * 7) + 90000;
+orderSchema.virtual('calculatedShippingCost').get(async function () {
+  // نوع ارسال را از this.submition بگیر
+  const shippingType = this.submition || 'پست';
+  const shippingCostDoc = await ShippingCost.findOne({ type: shippingType });
+  if (shippingCostDoc) {
+    return shippingCostDoc.cost + (shippingCostDoc.costPerKg * this.totalWeight / 1000);
+  }
+  return 0;
 });
 
 // Pre-save middleware to update totalWeight and shippingCost
 orderSchema.pre('save', async function (next) {
   if (this.isModified('products')) {
     this.totalWeight = await this.calculatedTotalWeight;
-    this.shippingCost = this.calculatedShippingCost;
+    this.shippingCost = await this.calculatedShippingCost;
   }
   next();
 });

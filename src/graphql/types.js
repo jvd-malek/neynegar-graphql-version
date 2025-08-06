@@ -10,6 +10,9 @@ const types = gql`
     traditionalBooks: [Product]
     articles: [Article]
     discountProducts: [Product]
+    groupDiscounts: [GroupDiscount]
+    courses: [Course]
+    relatedProducts: [Product]
   }
 
   type User {
@@ -29,6 +32,7 @@ const types = gql`
     totalWeight: Float
     createdAt: String
     updatedAt: String
+    courseProgress: [CourseProgress]
   }
 
   type PaginatedUsers {
@@ -75,7 +79,7 @@ const types = gql`
   }
 
   type UserFullBasket {
-    user: User!
+    user: User
     basket: [EnrichedBasket]!
     subtotal: Float!
     totalDiscount: Float!
@@ -105,6 +109,7 @@ const types = gql`
     publishDate: String
     brand: String
     status: String!
+    state: String
     size: String
     weight: Float!
     majorCat: String!
@@ -126,7 +131,7 @@ const types = gql`
     count: Int!
     showCount: Int!
     discountRaw: [Discount]!
-    totalSell: Int!
+    totalSell: Int
     popularity: Int!
     authorId: Author
     authorArticleId: Article
@@ -215,6 +220,13 @@ const types = gql`
     updatedAt: String
   }
 
+  type CheckoutPayment {
+    authority: String!
+    paymentURL: String!
+    success: Boolean!
+    message: String
+  }
+
   type CheckoutProduct {
     productId: Product!
     count: Int!
@@ -265,6 +277,11 @@ const types = gql`
     updatedAt: String
   }
 
+  type AuthPayload {
+    token: String!
+    user: User!
+  }
+
   type Author {
     _id: ID!
     firstname: String!
@@ -275,12 +292,25 @@ const types = gql`
     updatedAt: String
   }
 
-  type Code {
+  type Sections {
+    title: String!
+    txt: [String!]!
+    images: [Int]
+  }
+
+  type Course {
     _id: ID!
-    code: String!
-    exTime: Int!
-    phone: String!
-    count: Int!
+    title: String!
+    desc: String!
+    views: Int!
+    cover: String!
+    popularity: Int!
+    articleId: Article
+    sections: [Sections]
+    images: [String]
+    prerequisites: [Course]
+    category: String!
+    relatedProducts: [Product]
     createdAt: String
     updatedAt: String
   }
@@ -319,6 +349,32 @@ const types = gql`
     total: Int!
   }
 
+  type CourseProgress {
+    courseId: Course!
+    progress: Int!
+  }
+
+  type ShippingCost {
+    _id: ID!
+    type: String!
+    cost: Float!
+    costPerKg: Float!
+    createdAt: String
+    updatedAt: String
+  }
+
+  type Province {
+    province: String!
+    cities: [String]!
+  }
+
+  type PaginatedCourses {
+    courses: [Course!]!
+    totalPages: Int!
+    currentPage: Int!
+    total: Int!
+  }
+
   # Input Types
   input ProductImageInput {
     cover: String
@@ -338,6 +394,20 @@ const types = gql`
     postCode: Float
   }
 
+  input CourseInput {
+    title: String!
+    desc: String!
+    views: Int
+    cover: String
+    popularity: Int
+    articleId: ID
+    sections: [SectionsInput]
+    images: [String]
+    prerequisites: [ID]
+    category: String!
+    relatedProducts: [ID]
+  }
+
   input ProductInput {
     title: String!
     desc: String!
@@ -347,7 +417,7 @@ const types = gql`
     discount: DiscountInput!
     showCount: Int!
     totalSell: Int
-    popularity: Int!
+    popularity: Int
     authorId: ID
     publisher: String
     publishDate: String
@@ -362,9 +432,39 @@ const types = gql`
     images: [String]
   }
 
+  input UpdateProductInput {
+    title: String
+    desc: String
+    price: priceInput
+    cost: costInput
+    count: Int
+    discount: DiscountInput
+    showCount: Int
+    totalSell: Int
+    popularity: Int
+    authorId: ID
+    publisher: String
+    publishDate: String
+    brand: String
+    status: String
+    state: String
+    size: String
+    weight: Float
+    majorCat: String
+    minorCat: String
+    cover: String
+    images: [String]
+  }
+
   input DiscountInput {
     discount: Int!
     date: Float!
+  }
+
+  input SectionsInput {
+    title: String!
+    txt: [String!]!
+    images: [Int]
   }
 
   input priceInput {
@@ -374,8 +474,34 @@ const types = gql`
 
   input costInput {
     cost: Float!
-    count: Int
+    count: Int!
     date: String!
+  }
+
+  # Group Discount Types
+  type GroupDiscount {
+    _id: ID!
+    title: String!
+    majorCat: String!
+    minorCat: String
+    brand: String
+    discount: Int!
+    startDate: String
+    endDate: String
+    isActive: Boolean
+    createdAt: String
+    updatedAt: String
+  }
+
+  input GroupDiscountInput {
+    title: String!
+    majorCat: String!
+    minorCat: String
+    brand: String
+    discount: Int!
+    startDate: String
+    endDate: String!
+    isActive: Boolean
   }
 
   input OrderInput {
@@ -461,9 +587,24 @@ const types = gql`
   }
 
   input TicketInput {
-    userId: ID!
     title: String!
     txt: String!
+  }
+
+  input BasketInput {
+    productId: ID!
+    count: Int!
+  }
+
+  input CourseProgressInput {
+    courseId: ID!
+    progress: Int!
+  }
+
+  input ShippingCostInput {
+    type: String!
+    cost: Float!
+    costPerKg: Float!
   }
 `;
 

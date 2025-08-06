@@ -57,8 +57,23 @@ const articleResolvers = {
                     query.minorCat = cat;
                 }
 
+                // ساخت شیء مرتب‌سازی
+                const sortObj = (() => {
+                    switch (sort) {
+                        case 'popular':
+                            return { popularity: -1 };
+                        case 'views':
+                            return { views: -1 };
+                        case 'latest':
+                        default:
+                            return { createdAt: -1 };
+                    }
+                })();
+
                 const [articles, total] = await Promise.all([
                     Article.find(query)
+                        .populate('authorId', '_id firstname lastname fullName')
+                        .sort(sortObj)
                         .skip(skip)
                         .limit(limit)
                         .lean(),
@@ -87,7 +102,8 @@ const articleResolvers = {
 
                 const [articles, total] = await Promise.all([
                     Article.find(searchQuery)
-                        .sort({ showCount: -1, _id: -1 })
+                        .populate('authorId', '_id firstname lastname fullName')
+                        .sort({ popularity: -1, _id: -1 })
                         .skip(skip)
                         .limit(limit)
                         .lean(),

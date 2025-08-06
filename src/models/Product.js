@@ -71,7 +71,7 @@ const productSchema = new mongoose.Schema({
   },
   popularity: {
     type: Number,
-    default: 0,
+    default: 5,
     min: [0, 'محبوبیت نمی‌تواند منفی باشد']
   },
   authorId: {
@@ -118,7 +118,7 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: [true, 'وضعیت محصول الزامی است'],
     maxLength: [60, 'وضعیت محصول نمی‌تواند بیشتر از 60 کاراکتر باشد'],
-    enum: ['active', 'inactive', 'outOfStock', 'comingSoon']
+    enum: ['active', 'inactive', 'outOfStock', 'comingSoon' , "callForPrice"]
   },
   size: {
     type: String,

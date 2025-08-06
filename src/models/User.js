@@ -66,7 +66,18 @@ const userSchema = new mongoose.Schema({
     required: true,
     default: 0,
     min: [0, 'مبلغ کل خرید نمی‌تواند منفی باشد']
-  }
+  },
+  courseProgress: [{
+    courseId: {
+      type: mongoose.Types.ObjectId,
+      ref: 'Course',
+      required: true
+    },
+    progress: {
+      type: Number,
+      default: 0
+    }
+  }]
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
