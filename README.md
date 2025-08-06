@@ -33,9 +33,9 @@ This repository contains the backend implementation of the **NeyNegar** project 
 
 ---
 
-## 📁 Project Structure
+## 🧾 Project Structure
 
-.
+```
 ├── package.json
 ├── src
 │   ├── graphql
@@ -67,6 +67,7 @@ This repository contains the backend implementation of the **NeyNegar** project 
 │   │   ├── fileUpload.js
 │   │   └── getUserFromToken.js
 │   └── index.js
+```
 
 
 ## 📬 Contact
