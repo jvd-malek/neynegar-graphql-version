@@ -1,6 +1,6 @@
 # 🎯 NeyNegar GraphQL Backend
 
-This repository contains the backend implementation of the **NeyNegar** project — an educational platform for Persian calligraphy. It is fully powered by **GraphQL** and built with **Node.js**, focusing on scalability, modularity, and performance.
+This repository contains the backend implementation of the **NeyNegar** project — an online shop and educational platform for Persian calligraphy. It is fully powered by **GraphQL** and built with **Node.js**, focusing on scalability, modularity, and performance.
 
 ---
 
