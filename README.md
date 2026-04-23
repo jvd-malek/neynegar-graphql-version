@@ -9,10 +9,21 @@ A GraphQL API server for the NeyNegar application built with Node.js, Express, A
 npm install
 ```
 
-2. Create a `.env` file in the root directory with the following variables:
+2. Create a `.env` file in the backend directory with at least:
 ```
 PORT=4000
 MONGODB_URI=mongodb://localhost:27017/neynegar
+JWT_KEY=your_jwt_secret
+
+# Optional SMS configs (will fallback to code defaults if unset)
+SMS_USERNAME=your_ippanel_username
+SMS_PASSWORD=your_ippanel_password
+SMS_FROM=3000505
+SMS_PROMO_PATTERN=ispyrv56rhgo2yb
+
+# Promo defaults
+PROMO_DISCOUNT_PERCENT=10
+PROMO_VALID_DAYS=7
 ```
 
 3. Make sure MongoDB is running on your system
@@ -29,67 +40,20 @@ Production mode:
 npm start
 ```
 
-The GraphQL playground will be available at: https://api.neynegar1.ir/graphql
+GraphQL playground (local dev): http://localhost:4000/graphql
 
-## API Examples
+## Daily Promo Scheduler
 
-### Queries
+The server runs a daily job that:
 
-Fetch all todos:
-```graphql
-query {
-  todos {
-    id
-    title
-    completed
-    createdAt
-    updatedAt
-  }
-}
-```
+- Finds users with non-empty `bascket` whose `updatedAt` is older than 2 days
+- Ensures no promo was sent to them in the last 10 days (via `lastPromoSentAt` on `User`)
+- Generates a discount code, stores it in `user.discount`, updates `lastPromoSentAt`, and sends an SMS via ippanel
 
-Fetch a single todo:
-```graphql
-query {
-  todo(id: "todo-id") {
-    id
-    title
-    completed
-    createdAt
-    updatedAt
-  }
-}
-```
+Configuration via `.env`:
 
-### Mutations
+- `PROMO_DISCOUNT_PERCENT` (default 10)
+- `PROMO_VALID_DAYS` (default 7)
+- `SMS_USERNAME`, `SMS_PASSWORD`, `SMS_FROM`, `SMS_PROMO_PATTERN`
 
-Create a todo:
-```graphql
-mutation {
-  createTodo(title: "New Todo") {
-    id
-    title
-    completed
-    createdAt
-  }
-}
-```
-
-Update a todo:
-```graphql
-mutation {
-  updateTodo(id: "todo-id", title: "Updated Title", completed: true) {
-    id
-    title
-    completed
-    updatedAt
-  }
-}
-```
-
-Delete a todo:
-```graphql
-mutation {
-  deleteTodo(id: "todo-id")
-}
-``` 
+The scheduler starts automatically when the server starts and runs once ~10 seconds after boot, then every 24 hours.

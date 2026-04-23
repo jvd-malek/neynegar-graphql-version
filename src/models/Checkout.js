@@ -5,7 +5,10 @@ const checkoutSchema = new mongoose.Schema({
     productId: {
       type: mongoose.Types.ObjectId,
       ref: 'Product',
-      required: true
+    },
+    packageId: {
+      type: mongoose.Types.ObjectId,
+      ref: 'Package'
     },
     count: {
       type: Number,

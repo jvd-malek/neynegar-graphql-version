@@ -33,6 +33,18 @@ const commentSchema = new mongoose.Schema({
     type: mongoose.Types.ObjectId,
     ref: 'Article'
   },
+  target: {
+    type: {
+      type: String,
+      enum: ["Product", "Article", "Course", "Package"],
+      required: true
+    },
+    refId: {
+      type: mongoose.Types.ObjectId,
+      required: true,
+      refPath: 'target.type'
+    }
+  },
   userId: {
     type: mongoose.Types.ObjectId,
     ref: 'User',
@@ -54,6 +66,10 @@ const commentSchema = new mongoose.Schema({
       type: Number,
       default: 0,
       min: [0, 'تعداد لایک نمی‌تواند منفی باشد']
+    },
+    createdAt: {
+      type: Date,
+      required: true,
     }
   }]
 }, {

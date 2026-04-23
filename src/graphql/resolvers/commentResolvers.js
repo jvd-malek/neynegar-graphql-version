@@ -40,6 +40,25 @@ const commentResolvers = {
         total
       };
     },
+    commentsByPackage: async (_, { packageId, page = 1, limit = 10 }) => {
+      const skip = (page - 1) * limit;
+      const [comments, total] = await Promise.all([
+        Comment.find({ packageId })
+          .populate("userId")
+          .populate("replies.userId")
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        Comment.countDocuments({ packageId })
+      ]);
+
+      return {
+        comments,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      };
+    },
     commentsByArticle: async (_, { articleId, page = 1, limit = 10 }) => {
       const skip = (page - 1) * limit;
       const [comments, total] = await Promise.all([
@@ -59,17 +78,39 @@ const commentResolvers = {
         total
       };
     },
-    commentsByUser: async (_, { userId, page = 1, limit = 10 }) => {
+    commentsById: async (_, { type, id, page = 1, limit = 10 }) => {
+      const skip = (page - 1) * limit;
+
+      const [comments, total] = await Promise.all([
+        Comment.find({ "target.type": type, "target.refId": id })
+          .populate("userId")
+          .populate("replies.userId")
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        Comment.countDocuments({ "target.type": type, "target.refId": id })
+      ]);
+
+      return {
+        comments,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      };
+    },
+    commentsByUser: async (_, { page = 1, limit = 10 }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+
       const skip = (page - 1) * limit;
       const [comments, total] = await Promise.all([
-        Comment.find({ userId })
+        Comment.find({ userId: user._id })
           .populate("userId")
           .populate("productId")
           .populate("replies.userId")
           .skip(skip)
           .limit(limit)
           .exec(),
-        Comment.countDocuments({ userId })
+        Comment.countDocuments({ userId: user._id })
       ]);
 
       return {
@@ -119,11 +160,13 @@ const commentResolvers = {
 
     addReply: async (_, { commentId, input }, { user }) => {
       if (!user) throw new Error("Unauthorized");
+      const date = Date.now()
       const comment = await Comment.findById(commentId);
       comment.replies.push({
         ...input,
         userId: user._id,
-        like: 0
+        like: 0,
+        createdAt: date
       });
       return await comment.save();
     },

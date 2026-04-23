@@ -3,14 +3,64 @@ const Article = require('../../models/Article');
 const GroupDiscount = require('../../models/GroupDiscount');
 const Course = require('../../models/Course');
 const ShippingCost = require('../../models/ShippingCost');
-const { deleteFile, deleteFiles } = require('../../utils/fileUpload');
+const { deleteFile, deleteFiles, getActualFilePath, exploreDirectory } = require('../../utils/fileUpload');
+const path = require('path'); // Added for path.join
+const Package = require("../../models/Package");
+
+// تابع تبدیل اعداد فارسی به انگلیسی
+const convertPersianToEnglishNumbers = (text) => {
+  if (!text) return text;
+
+  const persianNumbers = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const englishNumbers = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+  let result = text;
+  persianNumbers.forEach((persianNum, index) => {
+    result = result.replace(new RegExp(persianNum, 'g'), englishNumbers[index]);
+  });
+
+  return result;
+};
+
+// تابع ایجاد کوئری جستجو با پشتیبانی از اعداد فارسی و انگلیسی
+const createSearchQuery = (searchText) => {
+  if (!searchText) return {};
+
+  // تبدیل اعداد فارسی به انگلیسی
+  const englishSearch = convertPersianToEnglishNumbers(searchText);
+
+  // ایجاد کوئری که هم متن اصلی و هم نسخه تبدیل شده را جستجو کند
+  const searchQueries = [];
+
+  // جستجو در متن اصلی (ممکن است فارسی باشد)
+  searchQueries.push(
+    { title: { $regex: searchText, $options: 'i' } },
+    { desc: { $regex: searchText, $options: 'i' } },
+    { brand: { $regex: searchText, $options: 'i' } },
+    { publisher: { $regex: searchText, $options: 'i' } }
+  );
+
+  // جستجو در نسخه تبدیل شده به انگلیسی (اگر متفاوت باشد)
+  if (englishSearch !== searchText) {
+    searchQueries.push(
+      { title: { $regex: englishSearch, $options: 'i' } },
+      { desc: { $regex: englishSearch, $options: 'i' } },
+      { brand: { $regex: englishSearch, $options: 'i' } },
+      { publisher: { $regex: englishSearch, $options: 'i' } }
+    );
+  }
+
+  return {
+    $or: searchQueries
+  };
+};
 
 const productResolvers = {
   Query: {
     homePageData: async () => {
       try {
         const caliBooks = await Product.find({ majorCat: "کتاب", minorCat: "خوشنویسی", showCount: { $gt: 0 } })
-          .select("_id title desc price discount popularity cover brand showCount majorCat minorCat")
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat")
           .sort({ _id: -1 }).limit(10).lean();
 
         const discountProducts = await Product.find({
@@ -22,19 +72,19 @@ const productResolvers = {
           },
           showCount: { $gt: 0 }
         })
-          .select("_id title desc price discount popularity cover brand showCount majorCat minorCat state")
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
           .sort({ _id: -1 }).limit(10).lean();
 
         const paintBooks = await Product.find({ majorCat: "کتاب", minorCat: "طراحی و نقاشی", showCount: { $gt: 0 } })
-          .select("_id title desc price discount popularity cover brand showCount majorCat minorCat state")
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
           .sort({ _id: -1 }).limit(10).lean();
 
         const traditionalBooks = await Product.find({ majorCat: "کتاب", minorCat: "هنرهای سنتی", showCount: { $gt: 0 } })
-          .select("_id title desc price discount popularity cover brand showCount majorCat minorCat state")
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
           .sort({ _id: -1 }).limit(10).lean();
 
         const gallery = await Product.find({ majorCat: "گالری", showCount: { $gt: 0 } })
-          .select("_id title desc price discount popularity cover brand showCount majorCat minorCat state")
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
           .sort({ _id: -1 }).limit(10).lean();
 
         const articles = await Article.find({})
@@ -85,22 +135,127 @@ const productResolvers = {
         throw new Error("Database error");
       }
     },
+    homePageHero: async () => {
+      try {
+        const caliBooks = await Product.find({ majorCat: "کتاب", minorCat: "خوشنویسی", showCount: { $gt: 0 } })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        const discountProducts = await Product.find({
+          $expr: {
+            $and: [
+              { $gt: [{ $arrayElemAt: ["$discount.discount", -1] }, 0] },
+              { $gt: [{ $arrayElemAt: ["$discount.date", -1] }, Date.now()] }
+            ]
+          },
+          showCount: { $gt: 0 }
+        })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        // اضافه کردن تخفیف‌های گروهی فعال
+        const now = Date.now();
+        const groupDiscounts = await GroupDiscount.find({
+          isActive: true,
+          startDate: { $lte: now },
+          endDate: { $gte: now }
+        }).sort({ startDate: -1 }).lean();
+
+        return { caliBooks, discountProducts, groupDiscounts };
+      } catch (err) {
+        console.error(err);
+        throw new Error("homePageHero Database error");
+      }
+    },
+    homePageBooks: async () => {
+      try {
+        const paintBooks = await Product.find({ majorCat: "کتاب", minorCat: "طراحی و نقاشی", showCount: { $gt: 0 } })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        const traditionalBooks = await Product.find({ majorCat: "کتاب", minorCat: "هنرهای سنتی", showCount: { $gt: 0 } })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        const gallery = await Product.find({ majorCat: "گالری", showCount: { $gt: 0 } })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        const tools = await Product.find({ majorCat: "لوازم خوشنویسی", showCount: { $gt: 0 } })
+          .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ _id: -1 })
+          .limit(10)
+          .lean();
+
+        return { paintBooks, traditionalBooks, gallery, tools };
+      } catch (err) {
+        console.error(err);
+        throw new Error("homePageBooks Database error");
+      }
+    },
+    homePageArticles: async () => {
+      try {
+        const articles = await Article.find({})
+          .populate('authorId', '_id firstname lastname fullName')
+          .sort({ _id: -1 })
+          .limit(3)
+          .lean();
+
+        return { articles };
+      } catch (err) {
+        console.error(err);
+        throw new Error("Articles Database error");
+      }
+    },
+    homePageCourses: async () => {
+      try {
+        let courses = await Course.find({})
+          .select('_id title desc articleId category relatedProducts')
+          .populate('articleId', '_id title desc')
+          .populate('relatedProducts', "_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
+          .sort({ popularity: -1 })
+          .lean();
+
+        // برای هر دوره، اگر relatedProducts وجود داشت همان را بگذار، اگر نه محصولات مرتبط با دسته‌بندی را پیدا کن (حداکثر 10 عدد)
+        courses = await Promise.all(courses.map(async (course) => {
+          let relatedProducts = course.relatedProducts;
+          if (!relatedProducts || relatedProducts.length === 0) {
+            relatedProducts = await Product.find({
+              brand: course.category
+            })
+              .sort({ _id: -1 })
+              .limit(10)
+              .lean();
+          }
+          return { ...course, relatedProducts };
+        }));
+
+        return { courses };
+      } catch (err) {
+        console.error(err);
+        throw new Error("Courses Database error");
+      }
+    },
     products: async (_, { page = 1, limit = 10, search = '' }) => {
       const skip = (page - 1) * limit;
 
-      // Create search query
-      const searchQuery = search ? {
-        $or: [
-          { title: { $regex: search, $options: 'i' } },
-          { desc: { $regex: search, $options: 'i' } },
-          { brand: { $regex: search, $options: 'i' } },
-          { publisher: { $regex: search, $options: 'i' } }
-        ]
-      } : {};
+      // Create search query with Persian/English number support
+      const searchQuery = createSearchQuery(search);
 
       const [products, total] = await Promise.all([
         Product.find(searchQuery)
           .populate('authorId', '_id firstname lastname fullName')
+          .sort({ updatedAt: -1, createdAt: -1 }) // مرتب‌سازی بر اساس جدیدترین محصولات (اول updatedAt، سپس createdAt)
           .skip(skip)
           .limit(limit),
         Product.countDocuments(searchQuery)
@@ -113,11 +268,30 @@ const productResolvers = {
         total
       };
     },
+    allProducts: async (_, { page = 1, limit = 100 }) => {
+      const skip = (page - 1) * limit;
+
+      const [products, total] = await Promise.all([
+        Product.find({})
+          .populate('authorId', '_id firstname lastname fullName')
+          .sort({ updatedAt: -1, createdAt: -1 }) // مرتب‌سازی بر اساس جدیدترین محصولات (اول updatedAt، سپس createdAt)
+          .skip(skip)
+          .limit(limit),
+        Product.countDocuments({})
+      ]);
+
+      return {
+        products,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
+        total
+      };
+    },
     product: async (_, { id }) => {
       return await Product.findById(id).populate("authorId")
-        .populate("authorArticleId", "_id desc")
-        .populate("publisherArticleId", "_id desc")
-        .populate("productArticleId", "_id desc")
+        .populate("authorArticleId", "_id title desc")
+        .populate("publisherArticleId", "_id title desc")
+        .populate("productArticleId", "_id title desc")
         .populate("comments")
         .populate({
           path: "comments",
@@ -133,7 +307,6 @@ const productResolvers = {
         })
         .exec();
     },
-    // ... existing code ...
     productsByCategory: async (_, { majorCat, minorCat, page = 1, limit = 10, search = '', sort = 'latest', cat = 'همه' }) => {
       try {
         const skip = (page - 1) * limit;
@@ -143,12 +316,10 @@ const productResolvers = {
         let query = { majorCat };
         if (minorCat) query.minorCat = minorCat;
 
-        // اضافه کردن فیلتر جستجو
+        // اضافه کردن فیلتر جستجو با پشتیبانی از اعداد فارسی و انگلیسی
         if (search) {
-          query.$or = [
-            { title: { $regex: search, $options: 'i' } },
-            { desc: { $regex: search, $options: 'i' } }
-          ];
+          const searchQuery = createSearchQuery(search);
+          query.$or = searchQuery.$or;
         }
 
         // اضافه کردن فیلتر دسته‌بندی
@@ -160,19 +331,41 @@ const productResolvers = {
           }
         }
 
-        // ساخت شیء مرتب‌سازی
+        // ساخت شیء مرتب‌سازی با اولویت محصولات موجود
         const sortObj = (() => {
+          const baseSort = { showCount: -1 };
+
           switch (sort) {
             case 'expensive':
-              return { finalPrice: -1, showCount: -1 };
+              return {
+                availabilityPriority: 1, // محصولات موجود اول
+                finalPrice: -1,
+                ...baseSort
+              };
             case 'cheap':
-              return { finalPrice: 1, showCount: -1 };
+              return {
+                availabilityPriority: 1, // محصولات موجود اول
+                finalPrice: 1,
+                ...baseSort
+              };
             case 'popular':
-              return { popularity: -1, showCount: -1 };
+              return {
+                availabilityPriority: 1, // محصولات موجود اول
+                popularity: -1,
+                ...baseSort
+              };
             case 'offers':
-              return { discountPercent: -1, showCount: -1 };
+              return {
+                availabilityPriority: 1, // محصولات موجود اول
+                discountPercent: -1,
+                ...baseSort
+              };
             default:
-              return { _id: -1, showCount: -1 }; // جدیدترین
+              return {
+                availabilityPriority: 1, // محصولات موجود اول
+                _id: -1,
+                ...baseSort
+              }; // جدیدترین
           }
         })();
 
@@ -183,6 +376,25 @@ const productResolvers = {
             $addFields: {
               lastPrice: { $ifNull: [{ $arrayElemAt: ["$price.price", -1] }, 0] },
               lastDiscount: { $ifNull: [{ $arrayElemAt: ["$discount", -1] }, { discount: 0, date: 0 }] },
+              // اولویت‌بندی: active + موجودی، سپس سایر حالات
+              availabilityPriority: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$state", "active"] },
+                      { $gt: ["$showCount", 0] }
+                    ]
+                  },
+                  0, // محصولات active با موجودی - بالاترین اولویت
+                  {
+                    $cond: [
+                      { $gt: ["$showCount", 0] },
+                      1, // محصولات با موجودی اما غیر active
+                      2  // محصولات بدون موجودی - پایین‌ترین اولویت
+                    ]
+                  }
+                ]
+              }
             }
           },
           {
@@ -232,7 +444,6 @@ const productResolvers = {
         throw new Error("خطا در دریافت محصولات");
       }
     },
-    // ... existing code ...
     productsByAuthor: async (_, { authorId }) => {
       return await Product.find({ authorId });
     },
@@ -242,19 +453,77 @@ const productResolvers = {
     searchProducts: async (_, { query, page = 1, limit = 10 }) => {
       try {
         const skip = (page - 1) * limit;
-        const searchQuery = {
-          $or: [
-            { title: { $regex: query, $options: 'i' } },
-            { desc: { $regex: query, $options: 'i' } }
-          ]
-        };
+        const searchQuery = createSearchQuery(query);
+        const now = Date.now();
+
+        // pipeline برای جستجو با اولویت‌بندی
+        const pipeline = [
+          { $match: searchQuery },
+          {
+            $addFields: {
+              lastPrice: { $ifNull: [{ $arrayElemAt: ["$price.price", -1] }, 0] },
+              lastDiscount: { $ifNull: [{ $arrayElemAt: ["$discount", -1] }, { discount: 0, date: 0 }] },
+              // اولویت‌بندی: active + موجودی، سپس سایر حالات
+              availabilityPriority: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$state", "active"] },
+                      { $gt: ["$showCount", 0] }
+                    ]
+                  },
+                  0, // محصولات active با موجودی - بالاترین اولویت
+                  {
+                    $cond: [
+                      { $gt: ["$showCount", 0] },
+                      1, // محصولات با موجودی اما غیر active
+                      2  // محصولات بدون موجودی - پایین‌ترین اولویت
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            $addFields: {
+              discountPercent: {
+                $cond: [
+                  { $gt: ["$lastDiscount.date", now] },
+                  "$lastDiscount.discount",
+                  0
+                ]
+              }
+            }
+          },
+          {
+            $addFields: {
+              finalPrice: {
+                $cond: [
+                  { $gt: ["$discountPercent", 0] },
+                  {
+                    $multiply: [
+                      "$lastPrice",
+                      { $divide: [{ $subtract: [100, "$discountPercent"] }, 100] }
+                    ]
+                  },
+                  "$lastPrice"
+                ]
+              }
+            }
+          },
+          {
+            $sort: {
+              availabilityPriority: 1, // اولویت‌بندی بر اساس موجودی و state
+              _id: -1,
+              showCount: -1
+            }
+          },
+          { $skip: skip },
+          { $limit: limit }
+        ];
 
         const [products, total] = await Promise.all([
-          Product.find(searchQuery)
-            .sort({ showCount: -1, _id: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean(),
+          Product.aggregate(pipeline),
           Product.countDocuments(searchQuery)
         ]);
 
@@ -303,7 +572,7 @@ const productResolvers = {
         const products = await Product
           .find({ majorCat, minorCat })
           .select(
-            '_id title desc price discount popularity cover brand majorCat minorCat authorId count showCount'
+            '_id title desc price finalPrice discount state popularity cover brand majorCat minorCat authorId count showCount'
           )
           .sort({ popularity: -1, _id: -1 })
           .limit(10)
@@ -314,7 +583,7 @@ const productResolvers = {
           const additionalProducts = await Product
             .find({ majorCat })
             .select(
-              '_id title desc price discount popularity cover brand majorCat minorCat authorId count showCount'
+              '_id title desc price finalPrice discount popularity cover brand majorCat minorCat authorId count showCount'
             )
             .sort({ popularity: -1, _id: -1 })
             .limit(10 - products.length)
@@ -331,7 +600,7 @@ const productResolvers = {
     offer: async (_, { page = 1, limit = 10 }) => {
       try {
         const skip = (page - 1) * limit;
-        
+
         const query = {
           $expr: {
             $and: [
@@ -344,7 +613,7 @@ const productResolvers = {
 
         const [products, total] = await Promise.all([
           Product.find(query)
-            .select("_id title desc price discount popularity cover brand showCount majorCat minorCat state")
+            .select("_id title desc price finalPrice discount popularity cover brand showCount majorCat minorCat state")
             .sort({ _id: -1 })
             .skip(skip)
             .limit(limit)
@@ -378,84 +647,170 @@ const productResolvers = {
       }
 
       try {
-        // تبدیل ID ها به ObjectId
-        const productIds = basket.map(item => item.productId);
+        // جداسازی محصولات و پکیج‌ها
+        const productItems = basket.filter(item => item.productId);
+        const packageItems = basket.filter(item => item.packageId);
 
-        // دریافت محصولات از دیتابیس
-        const products = await Product.find({
-          _id: { $in: productIds }
-        }).lean();
+        // آرایه‌ای برای نگهداری آیتم‌های ناموجود
+        const unavailableItems = [];
 
         let subtotal = 0;
         let totalDiscount = 0;
         let total = 0;
         let totalWeight = 0;
 
-        const isDiscountValid = (discount) => {
-          if (!discount || !discount.date) return false;
-          const now = Date.now();
-          const discountDate = discount.date;
-          return now <= discountDate;
-        };
+        const enrichedBasket = [];
 
-        const enrichedBasket = basket.map(item => {
-          const product = products.find(p => p._id.toString() === item.productId);
 
-          if (!product) {
-            return {
-              count: item.count,
-              productId: null,
-              currentPrice: 0,
-              currentDiscount: 0,
-              itemTotal: 0,
-              itemDiscount: 0,
-              itemWeight: 0
-            };
+        // -----------------------------------------------------
+        // 1) PRODUCT ITEMS
+        // -----------------------------------------------------
+        if (productItems.length > 0) {
+          const productIds = productItems.map(item => item.productId);
+          const products = await Product.find({ _id: { $in: productIds } });
+
+          // ساخت مپ برای دسترسی سریع
+          const productMap = {};
+          products.forEach(p => { productMap[p._id.toString()] = p; });
+
+          for (const item of productItems) {
+            const product = productMap[item.productId.toString()];
+
+            // 🚫 چک موجودی: اگر محصول ناموجود یا showCount صفره
+            if (!product || product.showCount <= 0) {
+              unavailableItems.push({
+                type: 'product',
+                id: item.productId,
+                title: product?.title || 'محصول'
+              });
+              continue;
+            }
+
+            // 📊 چک تعداد: اگر تعداد درخواستی بیشتر از موجودیه
+            let finalCount = item.count;
+            if (item.count > product.showCount) {
+              finalCount = product.showCount;
+            }
+
+
+            const currentPrice = product.currentPrice || 0;
+            const currentDiscount = product.currentDiscount || 0;
+            const productWeight = product.weight || 0;
+
+            const discountAmountPerUnit = currentPrice * (currentDiscount / 100);
+            const itemTotalPrice = currentPrice * finalCount;
+            const itemTotalDiscount = discountAmountPerUnit * finalCount;
+            const finalItemPrice = product.finalPrice * finalCount;
+            const itemWeight = productWeight * finalCount;
+
+            subtotal += itemTotalPrice;
+            totalDiscount += itemTotalDiscount;
+            total += finalItemPrice;
+            totalWeight += itemWeight;
+
+            enrichedBasket.push({
+              count: finalCount,
+              productId: {
+                _id: product._id,
+                title: product.title,
+                price: currentPrice,
+                discount: currentDiscount,
+                showCount: product.showCount,
+                state: product.state,
+                weight: product.weight,
+                cover: product.cover
+              },
+              packageId: null,
+              currentPrice,
+              currentDiscount,
+              itemTotal: finalItemPrice,
+              itemDiscount: itemTotalDiscount,
+              itemWeight
+            });
           }
+        }
 
-          // دریافت آخرین قیمت و تخفیف
-          const latestPriceEntry = product.price[product.price.length - 1];
-          const latestDiscountEntry = product.discount[product.discount.length - 1];
+        // -----------------------------------------------------
+        // 2) PACKAGE ITEMS
+        // -----------------------------------------------------
+        if (packageItems.length > 0) {
+          const packageIds = packageItems.map(item => item.packageId);
+          const packages = await Package.find({ _id: { $in: packageIds } })
+            .populate('products.product')
 
-          const currentPrice = latestPriceEntry?.price || 0;
-          const currentDiscount = isDiscountValid(latestDiscountEntry) ? (latestDiscountEntry?.discount || 0) : 0;
-          const productWeight = product.weight || 0;
+          // ساخت مپ برای دسترسی سریع
+          const packageMap = {};
+          packages.forEach(pkg => { packageMap[pkg._id.toString()] = pkg; });
 
-          const itemDiscountAmount = currentPrice * (currentDiscount / 100);
-          const itemTotal = (currentPrice - itemDiscountAmount) * item.count;
-          const itemWeight = productWeight * item.count;
+          for (const item of packageItems) {
+            const pkg = packageMap[item.packageId.toString()];
 
-          subtotal += currentPrice * item.count;
-          totalDiscount += itemDiscountAmount * item.count;
-          total += itemTotal;
-          totalWeight += itemWeight;
+            // 🚫 چک موجودی پکیج
+            if (!pkg || pkg.showCount <= 0) {
+              unavailableItems.push({
+                type: 'package',
+                id: item.packageId,
+                title: pkg?.title || 'پکیج'
+              });
+              continue;
+            }
 
+            // 📊 چک تعداد پکیج
+            let finalCount = item.count;
+            if (item.count > pkg.showCount) {
+              finalCount = pkg.showCount;
+            }
+
+            const price = pkg.totalPrice || 0;
+            const currentDiscount = pkg.currentDiscount || 0;
+            const discountAmountPerUnit = price * (currentDiscount / 100);
+            const itemTotalPrice = price * finalCount;
+            const itemTotalDiscount = discountAmountPerUnit * finalCount;
+            const finalPrice = itemTotalPrice - itemTotalDiscount;
+            const weight = (pkg.totalWeight || 0) * finalCount;
+
+            subtotal += itemTotalPrice;
+            totalDiscount += itemTotalDiscount;
+            total += finalPrice;
+            totalWeight += weight;
+
+            enrichedBasket.push({
+              count: finalCount,
+              productId: null,
+              packageId: {
+                _id: pkg._id.toString(),
+                title: pkg.title,
+                price: price,
+                discount: currentDiscount,
+                showCount: pkg.showCount,
+                state: pkg.state,
+                weight: pkg.totalWeight,
+                cover: pkg.cover
+              },
+              currentPrice: price,
+              currentDiscount,
+              itemTotal: finalPrice,
+              itemDiscount: itemTotalDiscount,
+              itemWeight: weight
+            });
+          }
+        }
+
+        // اگر هیچ آیتم معتبری وجود نداشت
+        if (enrichedBasket.length === 0) {
           return {
-            count: item.count,
-            productId: {
-              _id: product._id.toString(),
-              title: product.title,
-              desc: product.desc,
-              weight: product.weight,
-              cover: product.cover,
-              brand: product.brand,
-              status: product.status,
-              majorCat: product.majorCat,
-              minorCat: product.minorCat,
-              popularity: product.popularity,
-              price: currentPrice,
-              discount: currentDiscount,
-              discountRaw: product.discount,
-              showCount: product.showCount,
-              totalSell: product.totalSell || 0
-            },
-            currentPrice,
-            currentDiscount,
-            itemTotal,
-            itemDiscount: itemDiscountAmount * item.count,
-            itemWeight
+            user: null,
+            basket: [],
+            subtotal: 0,
+            totalDiscount: 0,
+            total: 0,
+            totalWeight: 0,
+            shippingCost: 0,
+            grandTotal: 0,
+            state: false,
+            unavailableItems: unavailableItems.map(i => i.title)
           };
-        });
+        }
 
         // محاسبه هزینه ارسال
         const shippingType = 'پست';
@@ -464,8 +819,7 @@ const productResolvers = {
         if (shippingCostDoc) {
           shippingCost = shippingCostDoc.cost + (shippingCostDoc.costPerKg * totalWeight / 1000);
         } else {
-          // فرمول پیش‌فرض اگر تنظیمات ارسال موجود نباشد
-          shippingCost = (totalWeight * 7) + 70000;
+          shippingCost = (totalWeight * 10) + 16000;
         }
 
         return {
@@ -477,8 +831,9 @@ const productResolvers = {
           totalWeight,
           shippingCost,
           grandTotal: total + shippingCost,
-          state: true
+          state: true,
         };
+
       } catch (error) {
         console.error('Error in localBasket resolver:', error);
         throw new Error("خطا در محاسبه سبد خرید محلی");
@@ -494,22 +849,29 @@ const productResolvers = {
 
   Mutation: {
     createProduct: async (_, { input }, { user }) => {
-      console.log('Creating product with input:', input);
-
       if (!user) throw new Error("Unauthorized")
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
 
       try {
+        // Default article IDs to use when specific articles are not provided
+        const defaultArticleIds = [
+          "68b5e0ce7c34d6bfc6fc5af3", // First default article
+          "6871f8b9159750ddb71f04e6", // Second default article  
+          "68bb0da27c34d6bfc6003f7b"  // Third default article
+        ];
+
         const productData = {
           ...input,
           cover: input.cover || '',
-          images: input.images || []
+          images: input.images || [],
+          // Set default article IDs if not provided
+          authorArticleId: input.authorArticleId || defaultArticleIds[0],
+          publisherArticleId: input.publisherArticleId || defaultArticleIds[1],
+          productArticleId: input.productArticleId || defaultArticleIds[2]
         };
 
-        console.log('Creating product with data:', productData);
         const product = new Product(productData);
         const savedProduct = await product.save();
-        console.log('Product saved successfully:', savedProduct);
         return savedProduct;
       } catch (error) {
         console.error('Error creating product:', error);
@@ -520,7 +882,7 @@ const productResolvers = {
     updateProduct: async (_, { id, input }, { user }) => {
       if (!user) throw new Error("Unauthorized")
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
-      console.log("input", input);
+
       try {
         const product = await Product.findById(id);
         if (!product) {
@@ -549,6 +911,23 @@ const productResolvers = {
         if (input.minorCat !== undefined) updateData.minorCat = input.minorCat;
         if (input.cover !== undefined) updateData.cover = input.cover;
         if (input.images !== undefined) updateData.images = input.images;
+
+        // Handle article IDs with defaults
+        const defaultArticleIds = [
+          "68b5e0ce7c34d6bfc6fc5af3", // First default article
+          "6871f8b9159750ddb71f04e6", // Second default article  
+          "68bb0da27c34d6bfc6003f7b"  // Third default article
+        ];
+
+        if (input.authorArticleId !== undefined) {
+          updateData.authorArticleId = input.authorArticleId || defaultArticleIds[0];
+        }
+        if (input.publisherArticleId !== undefined) {
+          updateData.publisherArticleId = input.publisherArticleId || defaultArticleIds[1];
+        }
+        if (input.productArticleId !== undefined) {
+          updateData.productArticleId = input.productArticleId || defaultArticleIds[2];
+        }
 
         // Handle price history
         if (input.price) {
@@ -618,14 +997,24 @@ const productResolvers = {
           throw new Error("Product not found");
         }
 
+        console.log('=== Updating Product Images ===');
+        console.log('Product ID:', id);
+        console.log('Old cover:', oldProduct.cover);
+        console.log('Old images:', oldProduct.images);
+        console.log('New cover:', input.cover);
+        console.log('New images:', input.images);
+        console.log('Current working directory:', process.cwd());
+
         // حذف تصاویر قدیمی که در input جدید نیستند
         if (oldProduct.cover && oldProduct.cover !== input.cover) {
+          console.log('Deleting old cover:', oldProduct.cover);
           deleteFile(oldProduct.cover);
         }
 
         if (oldProduct.images && oldProduct.images.length > 0) {
           const imagesToDelete = oldProduct.images.filter(img => !input.images.includes(img));
           if (imagesToDelete.length > 0) {
+            console.log('Images to delete:', imagesToDelete);
             deleteFiles(imagesToDelete);
           }
         }
@@ -642,8 +1031,10 @@ const productResolvers = {
           { new: true, runValidators: true }
         );
 
+        console.log('Product images updated successfully');
         return updatedProduct;
       } catch (error) {
+        console.error('Error in updateProductImages:', error);
         throw new Error(error.message);
       }
     },
@@ -752,6 +1143,109 @@ const productResolvers = {
       } catch (error) {
         console.error('Error updating product status:', error);
         throw new Error(error.message || "خطا در بروزرسانی وضعیت محصول");
+      }
+    },
+
+    // Test mutation for debugging file paths in cPanel
+    testFilePaths: async (_, { filePath }, { user }) => {
+      if (!user) throw new Error("Unauthorized")
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
+
+      try {
+        console.log('=== Testing File Path Detection ===');
+        console.log('Input file path:', filePath);
+        console.log('Current working directory:', process.cwd());
+
+        // Explore current directory structure
+        console.log('\n--- Current Directory Structure ---');
+        exploreDirectory(process.cwd());
+
+        // Explore uploads directory if it exists
+        const uploadsPath = path.join(process.cwd(), 'uploads');
+        if (require('fs').existsSync(uploadsPath)) {
+          console.log('\n--- Uploads Directory Structure ---');
+          exploreDirectory(uploadsPath);
+        }
+
+        // Explore parent directories
+        const parentPath = path.join(process.cwd(), '..');
+        if (require('fs').existsSync(parentPath)) {
+          console.log('\n--- Parent Directory Structure ---');
+          exploreDirectory(parentPath);
+        }
+
+        const actualPath = getActualFilePath(filePath);
+        console.log('\n--- File Path Detection Result ---');
+        console.log('Detected actual path:', actualPath);
+
+        if (actualPath) {
+          const exists = require('fs').existsSync(actualPath);
+          console.log('File exists at actual path:', exists);
+        }
+
+        return {
+          success: true,
+          inputPath: filePath,
+          actualPath: actualPath,
+          currentWorkingDir: process.cwd(),
+          message: 'Check server logs for detailed directory structure and file path detection'
+        };
+      } catch (error) {
+        console.error('Error testing file paths:', error);
+        throw new Error(error.message || "خطا در تست مسیر فایل‌ها");
+      }
+    },
+
+    // Test mutation for file deletion in cPanel
+    testFileDeletion: async (_, { filePath }, { user }) => {
+      if (!user) throw new Error("Unauthorized")
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
+
+      try {
+        console.log('=== Testing File Deletion ===');
+        console.log('File to delete:', filePath);
+
+        // Check if file exists before deletion
+        const actualPath = getActualFilePath(filePath);
+        if (!actualPath) {
+          return {
+            success: false,
+            message: 'File not found',
+            inputPath: filePath,
+            actualPath: null
+          };
+        }
+
+        const fs = require('fs');
+        const existsBefore = fs.existsSync(actualPath);
+        console.log('File exists before deletion:', existsBefore);
+
+        if (existsBefore) {
+          // Try to delete the file
+          deleteFile(filePath);
+
+          // Check if file still exists after deletion
+          const existsAfter = fs.existsSync(actualPath);
+          console.log('File exists after deletion:', existsAfter);
+
+          return {
+            success: true,
+            message: existsAfter ? 'File deletion failed' : 'File deleted successfully',
+            inputPath: filePath,
+            actualPath: actualPath,
+            deleted: !existsAfter
+          };
+        } else {
+          return {
+            success: false,
+            message: 'File does not exist',
+            inputPath: filePath,
+            actualPath: actualPath
+          };
+        }
+      } catch (error) {
+        console.error('Error testing file deletion:', error);
+        throw new Error(error.message || "خطا در تست حذف فایل");
       }
     }
   }

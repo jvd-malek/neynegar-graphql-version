@@ -63,13 +63,138 @@ const createUploadMiddleware = (uploadType, fieldName = 'cover', maxFiles = 1) =
     };
 };
 
+// Function to explore directory structure in cPanel
+const exploreDirectory = (dirPath) => {
+    try {
+        if (!fs.existsSync(dirPath)) {
+            console.log(`Directory does not exist: ${dirPath}`);
+            return;
+        }
+        
+        const items = fs.readdirSync(dirPath);
+        console.log(`Contents of ${dirPath}:`);
+        items.forEach(item => {
+            const fullPath = path.join(dirPath, item);
+            const stats = fs.statSync(fullPath);
+            const type = stats.isDirectory() ? 'DIR' : 'FILE';
+            const size = stats.isFile() ? `${(stats.size / 1024).toFixed(2)} KB` : '-';
+            console.log(`  ${type} - ${item} ${size}`);
+        });
+    } catch (error) {
+        console.error(`Error exploring directory ${dirPath}:`, error.message);
+    }
+};
+
+// Helper function to get the actual file path in cPanel
+const getActualFilePath = (filePath) => {
+    if (!filePath) return null;
+    
+    console.log('=== getActualFilePath Debug ===');
+    console.log('Input filePath:', filePath);
+    console.log('Current working directory:', process.cwd());
+    
+    // Remove leading slash and 'uploads/' prefix if exists
+    let cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+    cleanPath = cleanPath.replace('uploads/', '');
+    
+    // Get just the filename
+    const filename = path.basename(cleanPath);
+    console.log('Cleaned filename:', filename);
+    
+    // Try to find the file in different possible locations for cPanel
+    const possiblePaths = [
+        // Current directory + uploads
+        path.join(process.cwd(), 'uploads', filename),
+        // Current directory + uploads + subdirectories
+        path.join(process.cwd(), 'uploads', 'products', filename),
+        path.join(process.cwd(), 'uploads', 'articles', filename),
+        path.join(process.cwd(), 'uploads', 'default', filename),
+        // Going up one level
+        path.join(process.cwd(), '..', 'uploads', filename),
+        path.join(process.cwd(), '..', 'backend', 'uploads', filename),
+        // Going up two levels (in case we're in a subdirectory)
+        path.join(process.cwd(), '..', '..', 'uploads', filename),
+        path.join(process.cwd(), '..', '..', 'backend', 'uploads', filename),
+        // Absolute paths for cPanel
+        `/home/neynegar/uploads/${filename}`,
+        `/home/neynegar/backend/uploads/${filename}`,
+        `/home/neynegar/public_html/uploads/${filename}`,
+        `/home/neynegar/public_html/backend/uploads/${filename}`,
+        // Try with different upload types
+        `/home/neynegar/backend/uploads/products/${filename}`,
+        `/home/neynegar/backend/uploads/articles/${filename}`,
+        `/home/neynegar/backend/uploads/default/${filename}`
+    ];
+    
+    console.log('Checking possible paths:');
+    for (let i = 0; i < possiblePaths.length; i++) {
+        const fullPath = possiblePaths[i];
+        const exists = fs.existsSync(fullPath);
+        console.log(`${i + 1}. ${fullPath} - ${exists ? 'EXISTS' : 'NOT FOUND'}`);
+        
+        if (exists) {
+            console.log(`File found at: ${fullPath}`);
+            console.log('=== End Debug ===');
+            return fullPath;
+        }
+    }
+    
+    console.log('No file found in any of the possible paths');
+    console.log('=== End Debug ===');
+    return null;
+};
+
 // Function to delete file
 const deleteFile = (filePath) => {
-    if (filePath) {
-        const fullPath = path.join(process.cwd(), filePath);
-        if (fs.existsSync(fullPath)) {
-            fs.unlinkSync(fullPath);
+    if (!filePath) return;
+    
+    try {
+        // Get the actual file path in cPanel
+        const actualPath = getActualFilePath(filePath);
+        
+        if (actualPath) {
+            try {
+                fs.unlinkSync(actualPath);
+                console.log(`File deleted successfully: ${actualPath}`);
+            } catch (err) {
+                console.error(`Failed to delete file: ${actualPath}`, err.message);
+            }
+        } else {
+            console.log(`Could not find file to delete: ${filePath}`);
+            console.log('Current working directory:', process.cwd());
+            
+            // Fallback: try the old method
+            const cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+            const possiblePaths = [
+                path.join(process.cwd(), cleanPath),
+                path.join(process.cwd(), 'uploads', cleanPath.replace('uploads/', '')),
+                path.join(process.cwd(), '..', 'uploads', cleanPath.replace('uploads/', '')),
+                path.join(process.cwd(), '..', 'backend', 'uploads', cleanPath.replace('uploads/', '')),
+                path.join(process.cwd(), 'uploads', path.basename(cleanPath)),
+                path.join(process.cwd(), '..', 'backend', 'uploads', path.basename(cleanPath))
+            ];
+
+            let deleted = false;
+            for (const fullPath of possiblePaths) {
+                try {
+                    if (fs.existsSync(fullPath)) {
+                        fs.unlinkSync(fullPath);
+                        console.log(`File deleted successfully (fallback): ${fullPath}`);
+                        deleted = true;
+                        break;
+                    }
+                } catch (err) {
+                    console.log(`Failed to delete from path: ${fullPath}`, err.message);
+                    continue;
+                }
+            }
+
+            if (!deleted) {
+                console.log('All fallback paths failed. Tried:', possiblePaths);
+            }
         }
+    } catch (error) {
+        console.error(`Error deleting file ${filePath}:`, error.message);
     }
 };
 
@@ -107,5 +232,7 @@ module.exports = {
     deleteFile,
     deleteFiles,
     getFileUrl,
-    getFileUrls
+    getFileUrls,
+    getActualFilePath,
+    exploreDirectory
 }; 

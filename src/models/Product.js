@@ -118,7 +118,7 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: [true, 'وضعیت محصول الزامی است'],
     maxLength: [60, 'وضعیت محصول نمی‌تواند بیشتر از 60 کاراکتر باشد'],
-    enum: ['active', 'inactive', 'outOfStock', 'comingSoon' , "callForPrice"]
+    enum: ['active', 'inactive', 'outOfStock', 'comingSoon', "callForPrice"]
   },
   size: {
     type: String,
@@ -153,7 +153,7 @@ const productSchema = new mongoose.Schema({
     type: [String],
     default: [],
     validate: {
-      validator: function(v) {
+      validator: function (v) {
         return !v.includes(this.cover);
       },
       message: 'تصاویر نمی‌توانند شامل تصویر اصلی باشند'
@@ -166,24 +166,24 @@ const productSchema = new mongoose.Schema({
 });
 
 // Add pre-save middleware to handle dynamic updates
-productSchema.pre('findOneAndUpdate', function(next) {
+productSchema.pre('findOneAndUpdate', function (next) {
   this.options.runValidators = true;
   this.options.new = true;
   next();
 });
 
 // Add method to get current price
-productSchema.methods.getCurrentPrice = function() {
+productSchema.methods.getCurrentPrice = function () {
   return this.price[this.price.length - 1]?.price || 0;
 };
 
 // Add method to get current cost
-productSchema.methods.getCurrentCost = function() {
+productSchema.methods.getCurrentCost = function () {
   return this.cost[this.cost.length - 1]?.cost || 0;
 };
 
 // Add method to get current discount
-productSchema.methods.getCurrentDiscount = function() {
+productSchema.methods.getCurrentDiscount = function () {
   return this.discount[this.discount.length - 1]?.discount || 0;
 };
 
@@ -192,6 +192,31 @@ productSchema.virtual('comments', {
   ref: 'Comment',
   localField: '_id',
   foreignField: 'productId'
+});
+
+productSchema.virtual('currentPrice').get(function () {
+  const price = this.price;
+  const currentPrice = price.at(-1)?.price
+
+  return currentPrice;
+});
+
+productSchema.virtual('currentDiscount').get(function () {
+  const now = Date.now()
+  const discount = this.discount;
+  const currentDiscount = discount?.at(-1)?.date > now ? discount?.at(-1).discount : 0
+
+  return currentDiscount;
+});
+
+productSchema.virtual('finalPrice').get(function () {
+  const price = this.currentPrice;
+  const discount = this.currentDiscount;
+
+  const discountAmount = discount ? price * (discount / 100) : 0
+  const finalCalculatedPrice = price - discountAmount;
+
+  return finalCalculatedPrice;
 });
 
 // Add indexes

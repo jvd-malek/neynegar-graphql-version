@@ -12,38 +12,29 @@ const scalarResolvers = require('./scalarResolvers');
 const groupDiscountResolvers = require('./groupDiscountResolvers');
 const shippingCostResolvers = require('./shippingCostResolvers');
 const provinceResolvers = require('./provinceResolvers');
+const packageResolvers = require('./packageResolvers');
+
+const modules = [
+  userResolvers,
+  productResolvers,
+  orderResolvers,
+  checkoutResolvers,
+  commentResolvers,
+  articleResolvers,
+  authorResolvers,
+  courseResolvers,
+  linkResolvers,
+  ticketResolvers,
+  groupDiscountResolvers,
+  shippingCostResolvers,
+  provinceResolvers,
+  packageResolvers,
+];
 
 const resolvers = {
   ...scalarResolvers,
-  Query: {
-    ...userResolvers.Query,
-    ...productResolvers.Query,
-    ...orderResolvers.Query,
-    ...checkoutResolvers.Query,
-    ...commentResolvers.Query,
-    ...articleResolvers.Query,
-    ...authorResolvers.Query,
-    ...courseResolvers.Query,
-    ...linkResolvers.Query,
-    ...ticketResolvers.Query,
-    ...groupDiscountResolvers.Query,
-    ...shippingCostResolvers.Query,
-    ...provinceResolvers.Query
-  },
-  Mutation: {
-    ...userResolvers.Mutation,
-    ...productResolvers.Mutation,
-    ...orderResolvers.Mutation,
-    ...checkoutResolvers.Mutation,
-    ...commentResolvers.Mutation,
-    ...articleResolvers.Mutation,
-    ...authorResolvers.Mutation,
-    ...courseResolvers.Mutation,
-    ...linkResolvers.Mutation,
-    ...ticketResolvers.Mutation,
-    ...groupDiscountResolvers.Mutation,
-    ...shippingCostResolvers.Mutation
-  }
+  Query: Object.assign({}, ...modules.map(r => r.Query)),
+  Mutation: Object.assign({}, ...modules.map(r => r.Mutation)),
 };
 
-module.exports = resolvers; 
+module.exports = resolvers;

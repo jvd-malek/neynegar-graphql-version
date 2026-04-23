@@ -166,11 +166,11 @@ const courseResolvers = {
         throw new Error('خطا در افزودن سکشن: ' + err.message);
       }
     },
-    updateCourseViews: async (_, { courseId, views }) => {
+    updateCourseEntry: async (_, { courseId, entry }) => {
       try {
         const course = await Course.findByIdAndUpdate(
           courseId,
-          { views },
+          { entry },
           { new: true }
         );
         if (!course) throw new Error('Course not found');

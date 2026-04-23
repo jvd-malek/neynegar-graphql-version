@@ -6,7 +6,10 @@ const orderSchema = new mongoose.Schema({
     productId: {
       type: mongoose.Types.ObjectId,
       ref: 'Product',
-      required: true
+    },
+    packageId: {
+      type: mongoose.Types.ObjectId,
+      ref: 'Package'
     },
     price: {
       type: Number,
@@ -50,6 +53,11 @@ const orderSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'تخفیف نمی‌تواند منفی باشد']
   },
+  discountCode: {
+    type: String,
+    default: '',
+    trim: true
+  },
   status: {
     type: String,
     default: 'پرداخت نشده',
@@ -74,6 +82,10 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Types.ObjectId,
     ref: 'User',
     required: [true, 'شناسه کاربر الزامی است']
+  },
+  isFreeOrder: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true,
@@ -88,13 +100,20 @@ orderSchema.index({ createdAt: -1 });
 
 // Add virtual for totalWeight calculation
 orderSchema.virtual('calculatedTotalWeight').get(async function () {
-  if (!this.populated('products.productId')) {
+  if (!this.populated('products.productId') || !this.populated('products.packageId')) {
     await this.populate('products.productId');
+    await this.populate('products.packageId');
   }
 
-  return this.products.reduce((total, item) => {
-    return total + (item.productId.weight * item.count);
-  }, 0);
+  let totalWeight = 0;
+  for (const item of this.products) {
+    if (item.productId) {
+      totalWeight += (item.productId.weight || 0) * item.count;
+    } else if (item.packageId) {
+      totalWeight += (item.packageId.totalWeight || 0) * item.count;
+    }
+  }
+  return totalWeight;
 });
 
 // Add virtual for shipping cost calculation

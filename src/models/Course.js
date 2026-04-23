@@ -40,11 +40,6 @@ const courseSchema = new mongoose.Schema({
             default: []
         },
     }],
-    views: {
-        type: Number,
-        default: 0,
-        min: [0, 'تعداد بازدید نمی‌تواند منفی باشد']
-    },
     cover: {
         type: String,
         required: [true, 'تصویر اصلی الزامی است']
@@ -64,6 +59,11 @@ const courseSchema = new mongoose.Schema({
         type: mongoose.Types.ObjectId,
         ref: 'Course'
     }],
+    entry: {
+        type: Number,
+        default: 0,
+        min: [0, 'تعداد شرکت کننده‌ها نمی‌تواند منفی باشد']
+    },
     category: {
         type: String,
         required: true,

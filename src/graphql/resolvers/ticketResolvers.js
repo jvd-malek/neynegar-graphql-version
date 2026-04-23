@@ -64,7 +64,6 @@ const ticketResolvers = {
           select: '_id name phone status'
         });
     },
-
     ticketsByUser: async (_, { userId, page = 1, limit = 10 }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 

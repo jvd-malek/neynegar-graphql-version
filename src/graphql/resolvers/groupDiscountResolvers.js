@@ -8,9 +8,9 @@ const groupDiscountResolvers = {
       if (majorCat) query.majorCat = majorCat;
       if (minorCat) query.minorCat = minorCat;
       if (brand) query.brand = brand;
-      // فقط تخفیف‌هایی که هنوز منقضی نشده‌اند را برگردان
-      const now = Date.now();
-      query.endDate = { $gte: now };
+      // // فقط تخفیف‌هایی که هنوز منقضی نشده‌اند را برگردان
+      // const now = Date.now();
+      // query.endDate = { $gte: now };
       return await GroupDiscount.find(query).sort({ startDate: -1 });
     },
     activeGroupDiscounts: async () => {

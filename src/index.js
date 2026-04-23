@@ -8,6 +8,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const getUserFromToken = require('./utils/getUserFromToken');
+const { startScheduler } = require('./utils/scheduler');
 
 // Import GraphQL type definitions and resolvers
 const typeDefs = require('./graphql/schema');
@@ -82,8 +83,8 @@ const startServer = async () => {
             console.log('Processing files:', files);
 
             const result = {
-                cover: files.cover ? `/uploads/${files.cover[0].filename}` : null,
-                images: files.images ? files.images.map(file => `/uploads/${file.filename}`) : []
+                cover: files.cover ? `${files.cover[0].filename}` : null,
+                images: files.images ? files.images.map(file => `${file.filename}`) : []
             };
 
             console.log('Files uploaded successfully:', result);
@@ -131,6 +132,8 @@ const startServer = async () => {
         app.listen(PORT, () => {
             console.log(`Server is running on port ${PORT}`);
             console.log(`GraphQL Playground available at http://localhost:${PORT}/graphql`);
+            // Start daily promo scheduler
+            startScheduler();
         });
     } catch (error) {
         console.error('Error connecting to MongoDB:', error);

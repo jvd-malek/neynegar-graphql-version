@@ -15,6 +15,28 @@ const types = gql`
     relatedProducts: [Product]
   }
 
+  type HomePageHero {
+    caliBooks: [Product]
+    discountProducts: [Product]
+    groupDiscounts: [GroupDiscount]
+  }
+
+  type HomePageBooks {
+    paintBooks: [Product]
+    gallery: [Product]
+    traditionalBooks: [Product]
+    tools: [Product]
+  }
+
+  type HomePageArticles {
+    articles: [Article]
+  }
+
+  type HomePageCourses {
+    courses: [Course]
+    relatedProducts: [Product]
+  }
+  
   type User {
     _id: ID!
     status: String!
@@ -33,6 +55,7 @@ const types = gql`
     createdAt: String
     updatedAt: String
     courseProgress: [CourseProgress]
+    alert: [String]
   }
 
   type PaginatedUsers {
@@ -53,10 +76,13 @@ const types = gql`
     code: String
     date: Float
     discount: Int
+    status: String
   }
 
   type BasketItem {
+    target: String
     productId: Product
+    packageId: Package
     count: Int!
   }
 
@@ -70,7 +96,8 @@ const types = gql`
 
   type EnrichedBasket {
     count: Int!
-    productId: BasketProduct!
+    productId: BasketProduct
+    packageId: BasketPackage
     currentPrice: Float!
     currentDiscount: Float!
     itemTotal: Float!
@@ -91,16 +118,16 @@ const types = gql`
   }
 
   type Product {
-    _id: ID!
-    title: String!
-    desc: String!
+    _id: ID
+    title: String
+    desc: String
     price: [PriceHistory]
     cost: [CostHistory]
     discount: [DiscountHistory]
-    count: Int!
-    showCount: Int!
+    count: Int
+    showCount: Int
     totalSell: Int
-    popularity: Int!
+    popularity: Int
     authorId: Author
     authorArticleId: Article
     publisherArticleId: Article
@@ -108,14 +135,17 @@ const types = gql`
     publisher: String
     publishDate: String
     brand: String
-    status: String!
+    status: String
     state: String
     size: String
-    weight: Float!
-    majorCat: String!
-    minorCat: String!
-    cover: String!
+    weight: Float
+    majorCat: String
+    minorCat: String
+    cover: String
     images: [String]
+    currentPrice: Float
+    currentDiscount: Int
+    finalPrice: Float
     comments: [Comment]
     createdAt: String
     updatedAt: String
@@ -124,32 +154,23 @@ const types = gql`
   type BasketProduct {
     _id: ID!
     title: String!
-    desc: String!
     price: Float!
-    cost: [CostHistory]
     discount: Float!
-    count: Int!
     showCount: Int!
-    discountRaw: [Discount]!
-    totalSell: Int
-    popularity: Int!
-    authorId: Author
-    authorArticleId: Article
-    publisherArticleId: Article
-    productArticleId: Article
-    publisher: String
-    publishDate: String
-    brand: String
-    status: String!
-    size: String
+    state: String!
     weight: Float!
-    majorCat: String!
-    minorCat: String!
     cover: String!
-    images: [String]
-    comments: [Comment]
-    createdAt: String
-    updatedAt: String
+  }
+
+  type BasketPackage {
+    _id: ID!
+    title: String!
+    price: Float!
+    discount: Float!
+    showCount: Int!
+    state: String!
+    weight: Float!
+    cover: String!
   }
 
   type PaginatedProducts {
@@ -190,17 +211,20 @@ const types = gql`
     totalWeight: Float
     shippingCost: Float
     discount: Float
+    discountCode: String
     status: String!
     paymentId: String
     authority: String
     postVerify: String
     userId: User!
+    isFreeOrder: Boolean
     createdAt: String
     updatedAt: String
   }
 
   type OrderProduct {
-    productId: Product!
+    productId: Product
+    packageId: Package
     price: Float
     discount: Float
     count: Int
@@ -228,7 +252,8 @@ const types = gql`
   }
 
   type CheckoutProduct {
-    productId: Product!
+    productId: Product
+    packageId: Package
     count: Int!
   }
 
@@ -240,12 +265,19 @@ const types = gql`
     like: Int!
     productId: Product
     articleId: Article
+    target: CommentsTarget
     userId: User!
     replies: [Reply]
     createdAt: String
     updatedAt: String
   }
 
+  type CommentsTarget {
+    type: String!
+    refId: ID!
+  }
+
+    
   type PaginatedComments {
     comments: [Comment!]!
     totalPages: Int!
@@ -257,6 +289,7 @@ const types = gql`
     txt: String!
     userId: User!
     like: Int!
+    createdAt: String!
   }
 
   type Article {
@@ -302,7 +335,8 @@ const types = gql`
     _id: ID!
     title: String!
     desc: String!
-    views: Int!
+    entry: Int!
+    views: Int
     cover: String!
     popularity: Int!
     articleId: Article
@@ -381,6 +415,17 @@ const types = gql`
     images: [String]
   }
 
+  input PushSubscriptionInput {
+    endpoint: String!
+    expirationTime: String
+    keys: PushSubscriptionKeysInput!
+  }
+
+  input PushSubscriptionKeysInput {
+    p256dh: String!
+    auth: String!
+  }
+
   input ArticleImageInput {
     cover: String
     images: [String]
@@ -430,6 +475,9 @@ const types = gql`
     minorCat: String!
     cover: String!
     images: [String]
+    authorArticleId: ID
+    publisherArticleId: ID
+    productArticleId: ID
   }
 
   input UpdateProductInput {
@@ -454,6 +502,9 @@ const types = gql`
     minorCat: String
     cover: String
     images: [String]
+    authorArticleId: ID
+    publisherArticleId: ID
+    productArticleId: ID
   }
 
   input DiscountInput {
@@ -474,7 +525,7 @@ const types = gql`
 
   input costInput {
     cost: Float!
-    count: Int!
+    count: Int
     date: String!
   }
 
@@ -509,13 +560,29 @@ const types = gql`
     submition: String!
     totalPrice: Float!
     discount: Float
+    discountCode: String
     status: String!
     authority: String!
     userId: ID!
+    isFreeOrder: Boolean
+  }
+
+  input FreeOrderInput {
+    products: [OrderProductInput]!
+    submition: String!
+    totalPrice: Float!
+    discount: Float
+    discountCode: String
+    status: String!
+    customerName: String!
+    customerPhone: String!
+    customerAddress: String
+    customerPostCode: Float
   }
 
   input OrderProductInput {
-    productId: ID!
+    productId: ID
+    packageId: ID
     price: Float!
     discount: Float!
     count: Int!
@@ -532,7 +599,8 @@ const types = gql`
   }
 
   input CheckoutProductInput {
-    productId: ID!
+    productId: ID
+    packageId: ID
     count: Int!
   }
 
@@ -541,6 +609,12 @@ const types = gql`
     star: Int!
     productId: ID
     articleId: ID
+    target: TargetInput
+  }
+
+  input TargetInput {
+    type: String!
+    id: ID
   }
 
   input ReplyInput {
@@ -592,7 +666,8 @@ const types = gql`
   }
 
   input BasketInput {
-    productId: ID!
+    productId: ID
+    packageId: ID
     count: Int!
   }
 
@@ -605,6 +680,128 @@ const types = gql`
     type: String!
     cost: Float!
     costPerKg: Float!
+  }
+
+  # برای ساخت پکیج جدید
+  input PackageInput {
+    title: String!
+    desc: String!
+    totalSell: Int!
+    discount: DiscountInput
+    status: String!
+    state: String!
+    category: String!
+    brand: String!
+    cover: String!
+    products: [PackageProductInput!]!
+  }
+
+  # برای آپدیت پکیج
+  input UpdatePackageInput {
+    title: String
+    desc: String
+    totalSell: Int
+    popularity: Int
+    discount: DiscountInput
+    status: String
+    state: String
+    category: String
+    brand: String
+    cover: String
+    products: [PackageProductInput]
+    tags: [String]
+  }
+
+  # نوع جدید برای هر آیتم محصول داخل پکیج
+  input PackageProductInput {
+    product: ID!
+    quantity: Int
+  }
+  
+  type TestFilePathsResponse {
+    success: Boolean!
+    inputPath: String
+    actualPath: String
+    currentWorkingDir: String
+    message: String!
+  }
+
+  type TestFileDeletionResponse {
+    success: Boolean!
+    message: String!
+    inputPath: String
+    actualPath: String
+    deleted: Boolean
+  }
+
+  # Sales Analytics Types
+
+  type MonthlyProductStats {
+    product: Product
+    package: Package
+    totalCount: Int
+    totalRevenue: Float
+    totalSell: Int
+  }
+
+  type MonthlySalesData {
+    month: String!
+    year: Int!
+    totalOrders: Int!
+    totalRevenue: Float!
+    freeOrders: Int!
+    paidOrders: Int!
+    freeOrderRevenue: Float!
+    paidOrderRevenue: Float!
+    products: [MonthlyProductStats!]!
+  }
+
+  type SalesAnalytics {
+    monthlyData: [MonthlySalesData!]!
+    totalRevenue: Float!
+    totalOrders: Int!
+    averageOrderValue: Float!
+    freeOrderPercentage: Float!
+    topProducts: [MonthlyProductStats!]!
+  }
+
+  # Package Types
+
+  type Package {
+    _id: ID
+    title: String
+    desc: String
+    showCount: Int
+    totalSell: Int
+    popularity: Int
+    discount: [DiscountHistory]
+    status: String
+    state: String
+    category: String
+    brand: String
+    cover: String
+    products: [PackageProduct!]
+    totalPrice: Float
+    totalWeight: Float
+    finalPrice: Float
+    totalProducts: Int
+    currentDiscount: Int
+    createdAt: String
+    updatedAt: String
+  }
+
+  # محصول داخل پکیج
+  type PackageProduct {
+    product: Product
+    quantity: Int!
+  }
+
+  # برای صفحه‌بندی
+  type PaginatedPackages {
+    packages: [Package!]!
+    totalPages: Int!
+    currentPage: Int!
+    total: Int!
   }
 `;
 

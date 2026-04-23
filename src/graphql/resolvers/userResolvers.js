@@ -1,12 +1,20 @@
 const userModel = require('../../models/User');
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const request = require("request");
+const sendSms = require('../../utils/sendSms');
 const codeModel = require("../../models/Code");
 const salt = bcrypt.genSaltSync(10);
 const ShippingCost = require('../../models/ShippingCost');
 const Course = require('../../models/Course');
 const Product = require('../../models/Product');
+const Package = require('../../models/Package');
+const webpush = require('web-push');
+
+webpush.setVapidDetails(
+  'mailto:admin@neynegar1.ir',
+  process.env.push_notification_public_key,
+  process.env.push_notification_server_key
+);
 
 const normalizedPhone = (phone) => {
   let normalizedPhone = phone.replace(/\D/g, '');
@@ -48,10 +56,6 @@ const userResolvers = {
             .populate('bascket.productId')
             .populate('favorite.productId')
             .populate('readingList.articleId')
-            .populate({
-              path: 'courseProgress.courseId',
-              select: '_id title desc cover views popularity sections images prerequisites articleId createdAt updatedAt'
-            })
             .skip(skip)
             .limit(limit)
             .sort({ _id: -1 }),
@@ -80,11 +84,8 @@ const userResolvers = {
             select: '_id firstname lastname fullName'
           }
         })
-        .populate({
-          path: 'courseProgress.courseId',
-          select: '_id title desc cover views popularity sections images prerequisites articleId createdAt updatedAt'
-        })
-        
+
+
       return User
     },
     userByPhone: async (_, { phone }) => {
@@ -97,6 +98,7 @@ const userResolvers = {
       if (!user) throw new Error("Unauthorized");
       return await userModel.findById(user._id)
         .populate('bascket.productId')
+        .populate('bascket.packageId')
         .populate('favorite.productId')
         .populate({
           path: 'readingList.articleId',
@@ -107,94 +109,221 @@ const userResolvers = {
         })
         .populate({
           path: 'courseProgress.courseId',
-          select: '_id title desc cover views popularity sections images prerequisites articleId createdAt updatedAt'
+          select: '_id title desc cover entry sections popularity'
         })
     },
     userFullBasket: async (_, __, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
       const populatedUser = await userModel.findById(user._id)
-        .populate("bascket.productId")
-        .populate('favorite.productId')
-        .populate({
-          path: 'readingList.articleId',
-          populate: {
-            path: 'authorId',
-            select: '_id firstname lastname fullName'
-          }
-        })
-        .populate({
-          path: 'courseProgress.courseId',
-          select: '_id title desc cover views popularity sections images prerequisites articleId createdAt updatedAt'
+        .populate("bascket.productId");
+
+      // آرایه‌ای برای نگهداری آیتم‌هایی که باید حذف یا آپدیت شن
+      const basketUpdates = [];
+      const itemsToRemove = [];
+
+      const userPackages = populatedUser.bascket
+        .filter(item => item.target === "Package" && item.packageId !== null);
+
+      // populate packages seperatly
+      let populatedPackages = [];
+      if (userPackages.length > 0) {
+        const packageIds = userPackages.map(item => item.packageId)
+        const packages = await Package.find({ _id: { $in: packageIds } })
+          .populate('products.product');
+
+        populatedPackages = userPackages.map((item) => {
+          const pkg = packages.find(p => p._id.toString() === item.packageId.toString());
+          return { target: item.target, packageId: pkg, count: item.count };
         });
+      }
 
       let subtotal = 0;
       let totalDiscount = 0;
       let total = 0;
       let totalWeight = 0;
 
-      const isDiscountValid = (discount) => {
-        if (!discount || !discount.date) return false;
-        const now = Date.now();
-        const discountDate = discount.date
-        return now <= discountDate;
-      };
+      const enrichedBasket = [];
 
-      const enrichedBasket = populatedUser.bascket
-        .filter(item => item.productId) // فقط آیتم‌هایی که محصول دارند را در نظر بگیر
-        .map(item => {
-          const product = item.productId;
+      // -----------------------------------------------------
+      // 1) PRODUCT ITEMS (با چک موجودی)
+      // -----------------------------------------------------
+      for (const item of populatedUser.bascket.filter(i => i.productId)) {
+        const p = item.productId;
 
-          // دریافت آخرین قیمت و تخفیف
-          const latestPriceEntry = product.price[product.price.length - 1];
-          const latestDiscountEntry = product.discount[product.discount.length - 1];
+        // 🚫 چک موجودی: اگر showCount صفره، حذف کن از سبد
+        if (!p || p.showCount <= 0) {
+          itemsToRemove.push({ type: 'product', id: p?._id });
+          continue;
+        }
 
-          const currentPrice = latestPriceEntry?.price || 0;
-          const currentDiscount = isDiscountValid(latestDiscountEntry) ? (latestDiscountEntry?.discount || 0) : 0;
-          const productWeight = product.weight || 0;
+        // 📊 چک تعداد: اگر تعداد در سبد بیشتر از موجودیه، کمش کن
+        let finalCount = item.count;
+        if (item.count > p.showCount) {
+          finalCount = p.showCount;
+          basketUpdates.push({
+            type: 'product',
+            id: p._id,
+            newCount: finalCount
+          });
+        }
 
-          const itemDiscountAmount = currentPrice * (currentDiscount / 100);
-          const itemTotal = (currentPrice - itemDiscountAmount) * item.count;
-          const itemWeight = productWeight * item.count;
+        const itemPrice = p.currentPrice || 0;
+        const currentDiscount = p.currentDiscount || 0;
+        const discountAmountPerUnit = itemPrice * (currentDiscount / 100);
+        const itemTotalPrice = itemPrice * finalCount;
+        const itemTotalDiscount = discountAmountPerUnit * finalCount;
+        const finalItemPrice = p.finalPrice * finalCount;
+        const weight = (p.weight || 0) * finalCount;
 
-          subtotal += currentPrice * item.count;
-          totalDiscount += itemDiscountAmount * item.count;
-          total += itemTotal;
-          totalWeight += itemWeight;
+        subtotal += itemTotalPrice;
+        totalDiscount += itemTotalDiscount;
+        total += finalItemPrice;
+        totalWeight += weight;
 
-          return {
-            count: item.count,
-            productId: {
-              _id: product._id.toString(),
-              title: product.title,
-              desc: product.desc,
-              weight: product.weight,
-              cover: product.cover,
-              brand: product.brand,
-              status: product.status,
-              majorCat: product.majorCat,
-              minorCat: product.minorCat,
-              popularity: product.popularity,
-              price: currentPrice,
-              discount: currentDiscount,
-              discountRaw: product.discount,
-              showCount: product.showCount
-            },
-            currentPrice,
-            currentDiscount,
-            itemTotal,
-            itemDiscount: itemDiscountAmount * item.count,
-            itemWeight
-          };
+        enrichedBasket.push({
+          count: finalCount,
+          productId: {
+            _id: p._id,
+            title: p.title,
+            price: itemPrice,
+            discount: currentDiscount,
+            showCount: p.showCount,
+            state: p.state,
+            weight: p.weight,
+            cover: p.cover
+          },
+          packageId: null,
+          currentPrice: itemPrice,
+          currentDiscount,
+          itemTotal: finalItemPrice,
+          itemDiscount: itemTotalDiscount,
+          itemWeight: weight
         });
+      }
 
-      // نوع ارسال را از user.address یا یک مقدار پیش‌فرض بگیر (اینجا فرض می‌کنیم همیشه 'پست')
-      const shippingType = 'پست';
-      // هزینه ارسال را از مدل ShippingCost پیدا کن
+      // -----------------------------------------------------
+      // 2) PACKAGE ITEMS (با چک موجودی)
+      // -----------------------------------------------------
+      for (const item of populatedPackages.filter(i => i.packageId)) {
+        const pkg = item.packageId;
+
+        // 🚫 چک موجودی پکیج: اگر showCount صفره یا isAvailable false هست
+        if (!pkg || pkg.showCount <= 0) {
+          itemsToRemove.push({ type: 'package', id: pkg?._id });
+          continue;
+        }
+
+        // 📊 چک تعداد پکیج
+        let finalCount = item.count;
+        if (item.count > pkg.showCount) {
+          finalCount = pkg.showCount;
+          basketUpdates.push({
+            type: 'package',
+            id: pkg._id,
+            newCount: finalCount
+          });
+        }
+
+        const price = pkg.totalPrice;
+        const currentDiscount = pkg.currentDiscount;
+        const discountAmountPerUnit = price * (currentDiscount / 100);
+        const itemTotalPrice = price * finalCount;
+        const itemTotalDiscount = discountAmountPerUnit * finalCount;
+        const finalPrice = itemTotalPrice - itemTotalDiscount;
+        const weight = (pkg.totalWeight || 0) * finalCount;
+
+        subtotal += itemTotalPrice;
+        totalDiscount += itemTotalDiscount;
+        total += finalPrice;
+        totalWeight += weight;
+
+        enrichedBasket.push({
+          count: finalCount,
+          productId: null,
+          packageId: {
+            _id: pkg._id,
+            title: pkg.title,
+            price: price,
+            discount: currentDiscount,
+            showCount: pkg.showCount,
+            state: pkg.state,
+            weight: pkg.totalWeight,
+            cover: pkg.cover
+          },
+          currentPrice: price,
+          currentDiscount,
+          itemTotal: finalPrice,
+          itemDiscount: itemTotalDiscount,
+          itemWeight: weight
+        });
+      }
+
+      // 💾 اعمال تغییرات روی سبد خرید کاربر در دیتابیس
+      if (itemsToRemove.length > 0 || basketUpdates.length > 0) {
+        // سبد خرید اصلی (populate نشده) رو از دیتابیس بگیر
+        const freshUser = await userModel.findById(user._id).select('bascket');
+        let updatedBasket = [...freshUser.bascket];
+
+        // ۱. حذف آیتم‌های ناموجود
+        if (itemsToRemove.length > 0) {
+          updatedBasket = updatedBasket.filter(item => {
+            if (item.productId) {
+              return !itemsToRemove.some(r => r.type === 'product' && r.id?.toString() === item.productId.toString());
+            }
+            if (item.packageId) {
+              return !itemsToRemove.some(r => r.type === 'package' && r.id?.toString() === item.packageId.toString());
+            }
+            return true;
+          });
+        }
+
+        // ۲. آپدیت تعداد آیتم‌ها
+        if (basketUpdates.length > 0) {
+          updatedBasket = updatedBasket.map(item => {
+            if (item.productId) {
+              const update = basketUpdates.find(u => u.type === 'product' && u.id?.toString() === item.productId.toString());
+              if (update) {
+                return {
+                  target: item.target || 'Product',
+                  productId: item.productId,
+                  packageId: null,
+                  count: update.newCount
+                };
+              }
+            }
+            if (item.packageId) {
+              const update = basketUpdates.find(u => u.type === 'package' && u.id?.toString() === item.packageId.toString());
+              if (update) {
+                return {
+                  target: item.target || 'Package',
+                  productId: null,
+                  packageId: item.packageId,
+                  count: update.newCount
+                };
+              }
+            }
+            return item;
+          });
+        }
+
+        // ۳. ذخیره در دیتابیس
+        await userModel.findByIdAndUpdate(user._id, { bascket: updatedBasket });
+      }
+
+      // ---------------------------------------
+      // shipping cost 
+      // ---------------------------------------
+      const shippingType = "پست";
       const shippingCostDoc = await ShippingCost.findOne({ type: shippingType });
+
       let shippingCost = 0;
       if (shippingCostDoc) {
-        shippingCost = shippingCostDoc.cost + (shippingCostDoc.costPerKg * totalWeight / 1000);
+        shippingCost =
+          shippingCostDoc.cost +
+          shippingCostDoc.costPerKg * (totalWeight / 1000);
+      } else {
+        shippingCost = (totalWeight * 10) + 16000;
       }
 
       return {
@@ -207,7 +336,7 @@ const userResolvers = {
         shippingCost,
         grandTotal: total + shippingCost,
         state: true
-      }
+      };
     }
   },
 
@@ -226,27 +355,20 @@ const userResolvers = {
       });
 
       // ارسال پیامک
-      request.post({
-        url: "http://ippanel.com/api/select",
-        body: {
-          op: "pattern",
-          user: "u09960025507",
-          pass: "Faraz@1834690023902711",
-          fromNum: "3000505",
-          toNum: phone,
-          patternCode: "ispyrv56rhgo2yb",
-          inputData: [{ "verification-code": ranCode, "name": name }]
-        },
-        json: true
-      },
-        (err, res, body) => {
-          if (err) console.error("SMS Error:", err);
-          else console.log("SMS sent:", body); console.log("Code:", ranCode);
+      try {
+        await sendSms({
+          to: phone,
+          patternCode: process.env.SMS_VERIFICATION_PATTERN || process.env.SMS_PROMO_PATTERN || 'ispyrv56rhgo2yb',
+          inputData: [{ 'verification-code': ranCode, name }]
         });
+        console.log('Code:', ranCode);
+      } catch (e) {
+        console.error('SMS Error:', e);
+      }
       return true;
     },
 
-    verifyCode: async (_, { phone, code, name, basket }, context) => {
+    verifyCode: async (_, { phone, code, name, basket }) => {
       const codeDoc = await codeModel.findOne({ phone });
 
       if (!codeDoc) throw new Error("کد یافت نشد");
@@ -262,28 +384,143 @@ const userResolvers = {
         throw new Error("کد نادرست است");
       }
 
+      // حذف کد بعد از استفاده موفق
+      await codeModel.findOneAndDelete({ phone });
+
       // یافتن یا ساخت کاربر 
       let user = await userModel.findOne({ phone });
+
       if (!user) {
-        const Phone = normalizedPhone(phone)
+        // کاربر جدید - ساخت اکانت با سبد خرید مهمان
+        const Phone = normalizedPhone(phone);
+
+        // فیلتر کردن سبد خرید برای حذف آیتم‌های تکراری
+        const uniqueBasket = [];
+        const seenProducts = new Set();
+        const seenPackages = new Set();
+
+        if (basket && basket.length > 0) {
+          for (const item of basket) {
+            if (item.productId) {
+              const key = `product_${item.productId}`;
+              if (!seenProducts.has(key)) {
+                seenProducts.add(key);
+                uniqueBasket.push({
+                  target: 'Product',
+                  productId: item.productId,
+                  count: item.count
+                });
+              }
+            } else if (item.packageId) {
+              const key = `package_${item.packageId}`;
+              if (!seenPackages.has(key)) {
+                seenPackages.add(key);
+                uniqueBasket.push({
+                  target: 'Package',
+                  packageId: item.packageId,
+                  count: item.count
+                });
+              }
+            }
+          }
+        }
+
         user = await userModel.create({
           name,
           phone: Phone,
           status: "user",
-          bascket: basket || [],
+          bascket: uniqueBasket,
           favorite: [],
           discount: [],
           totalBuy: 0
         });
-      } else if (basket && basket.length > 0) {
-        // اگر کاربر قبلاً وجود داشته و سبد خرید جدید دارد، آیتم‌های جدید را اضافه کن (بدون تکرار)
-        basket.forEach(item => {
-          if (!user.bascket.some(b => b.productId.toString() === item.productId)) {
-            user.bascket.push(item);
+
+      } else {
+        // کاربر موجود - merge سبد خرید مهمان با سبد خرید کاربر
+
+        if (basket && basket.length > 0) {
+          // تبدیل سبد خرید فعلی به مپ برای دسترسی سریع‌تر
+          const currentBasketMap = new Map();
+
+          for (const item of user.bascket) {
+            if (item.productId) {
+              currentBasketMap.set(`product_${item.productId.toString()}`, {
+                target: item.target || 'Product',
+                id: item.productId.toString(),
+                count: item.count,
+              });
+            } else if (item.packageId) {
+              currentBasketMap.set(`package_${item.packageId.toString()}`, {
+                target: item.target || 'Package',
+                id: item.packageId.toString(),
+                count: item.count,
+              });
+            }
           }
-        });
-        await user.save();
+
+          // اضافه کردن آیتم‌های جدید از سبد مهمان
+          for (const item of basket) {
+            if (item.productId) {
+              const key = `product_${item.productId}`;
+              const existing = currentBasketMap.get(key);
+
+              if (existing) {
+                // اگر محصول وجود دارد، تعداد رو جمع کن
+                existing.count += item.count;
+              } else {
+                // اگر محصول جدید است، اضافه کن
+                currentBasketMap.set(key, {
+                  target: 'Product',
+                  id: item.productId,
+                  count: item.count
+                });
+              }
+            } else if (item.packageId) {
+              const key = `package_${item.packageId}`;
+              const existing = currentBasketMap.get(key);
+
+              if (existing) {
+                // اگر پکیج وجود دارد، تعداد رو جمع کن
+                existing.count += item.count;
+              } else {
+                // اگر پکیج جدید است، اضافه کن
+                currentBasketMap.set(key, {
+                  target: 'Package',
+                  id: item.packageId,
+                  count: item.count
+                });
+              }
+            }
+          }
+
+          // تبدیل مپ به آرایه با فرمت صحیح
+          const mergedBasket = [];
+          for (const item of currentBasketMap.values()) {
+            if (item.target === 'Product') {
+              mergedBasket.push({
+                target: 'Product',
+                productId: item.id,
+                count: item.count
+              });
+            } else if (item.target === 'Package') {
+              mergedBasket.push({
+                target: 'Package',
+                packageId: item.id,
+                count: item.count
+              });
+            }
+          }
+
+          // آپدیت سبد خرید کاربر
+          user.bascket = mergedBasket;
+          await user.save();
+        }
       }
+
+      // populate کاربر برای برگرداندن به فرانت
+      const populatedUser = await userModel.findById(user._id)
+        .populate('bascket.productId')
+        .populate('bascket.packageId')
 
       const token = jwt.sign(
         { id: user._id },
@@ -291,7 +528,7 @@ const userResolvers = {
         { expiresIn: "90d" }
       );
 
-      return { token, user };
+      return { token, user: populatedUser };
     },
 
     createUser: async (_, { input }, { user }) => {
@@ -307,7 +544,6 @@ const userResolvers = {
 
     updateUser: async (_, { id, input }, { user }) => {
       if (!user) throw new Error("Unauthorized")
-
       return await userModel.findByIdAndUpdate(id, input, { new: true });
     },
 
@@ -319,7 +555,7 @@ const userResolvers = {
       return !!result;
     },
 
-    addToBasket: async (_, { productId, count }, { user }) => {
+    pushProductToBasket: async (_, { productId, count }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
       const User = await userModel.findById(user._id);
@@ -327,12 +563,19 @@ const userResolvers = {
 
       // دریافت showCount از مدل محصول
       const product = await Product.findById(productId);
+
+      // اگه تعداد درخواستی بیشتر از حد مجازه
+      if (count > product.showCount) {
+        throw new Error(`حداکثر ${product.showCount} عدد موجود است`);
+      }
+
       if (!product) throw new Error("Product not found");
+
       const showCount = product.showCount || 1;
 
       // پیدا کردن آیتم فعلی در سبد
       const existingItem = User.bascket.find(
-        item => item.productId.toString() === productId
+        item => item?.productId?.toString() === productId
       );
 
       if (existingItem) {
@@ -344,28 +587,69 @@ const userResolvers = {
         }
       } else {
         // اگر آیتم جدید است، اضافه کن (ولی بیشتر از showCount نشود)
-        User.bascket.push({ productId, count: Math.min(count, showCount) });
+        User.bascket.push({ target: "Product", productId, count: Math.min(count, showCount) });
       }
 
       await User.save();
 
       return await userModel.findById(user._id)
         .populate('bascket.productId')
-        .populate('favorite.productId')
-        .populate('readingList.articleId');
+        .populate('bascket.packageId')
     },
 
-    removeFromBasket: async (_, { productId }, { user }) => {
+    pushPackageToBasket: async (_, { packageId, count }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+
+      const User = await userModel.findById(user._id);
+      if (!User) throw new Error("User not found");
+
+      // پکیج رو با populate محصولاتش بگیر
+      const pack = await Package.findById(packageId).populate('products.product');
+
+      // اگه تعداد درخواستی بیشتر از حد مجازه
+      if (count > pack.showCount) {
+        throw new Error(`حداکثر ${pack.showCount} عدد موجود است`);
+      }
+
+      if (!pack) throw new Error("Package not found");
+      const showCount = pack.showCount || 1;
+
+      // پیدا کردن آیتم فعلی در سبد
+      const existingItem = User.bascket.find(
+        item => item?.packageId?.toString() === packageId
+      );
+
+      if (existingItem) {
+        // اگر تعداد جدید بیشتر از showCount بود، محدود کن
+        if (existingItem.count + count <= showCount) {
+          existingItem.count += count;
+        } else {
+          existingItem.count = showCount;
+        }
+      } else {
+        // اگر آیتم جدید است، اضافه کن (ولی بیشتر از showCount نشود)
+        User.bascket.push({ target: "Package", packageId, count: Math.min(count, showCount) });
+      }
+
+      await User.save();
+
+      return await userModel.findById(user._id)
+        .populate('bascket.productId')
+        .populate('bascket.packageId')
+    },
+
+    pullProductFromBasket: async (_, { productId, count }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
       const User = await userModel.findById(user._id);
       if (!User) throw new Error("User not found");
 
       // پیدا کردن آیتم در سبد
-      const itemIndex = User.bascket.findIndex(item => item.productId.toString() === productId);
+      const itemIndex = User.bascket.findIndex(item => item?.productId?.toString() === productId);
+
       if (itemIndex !== -1) {
-        if (User.bascket[itemIndex].count > 1) {
-          User.bascket[itemIndex].count -= 1;
+        if (User.bascket[itemIndex].count > count) {
+          User.bascket[itemIndex].count -= count;
         } else {
           // اگر تعداد به صفر رسید، حذف کن
           User.bascket.splice(itemIndex, 1);
@@ -375,11 +659,33 @@ const userResolvers = {
 
       return await userModel.findById(user._id)
         .populate('bascket.productId')
-        .populate('favorite.productId')
-        .populate('readingList.articleId');
+        .populate('bascket.packageId')
     },
 
-    addToFavorite: async (_, {productId }, { user }) => {
+    pullPackageFromBasket: async (_, { packageId, count }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+
+      const User = await userModel.findById(user._id);
+      if (!User) throw new Error("User not found");
+
+      // پیدا کردن آیتم در سبد
+      const itemIndex = User.bascket.findIndex(item => item?.packageId?.toString() === packageId);
+      if (itemIndex !== -1) {
+        if (User.bascket[itemIndex].count > count) {
+          User.bascket[itemIndex].count -= count;
+        } else {
+          // اگر تعداد به صفر رسید، حذف کن
+          User.bascket.splice(itemIndex, 1);
+        }
+        await User.save();
+      }
+
+      return await userModel.findById(user._id)
+        .populate('bascket.productId')
+        .populate('bascket.packageId')
+    },
+
+    addToFavorite: async (_, { productId }, { user }) => {
       if (!user) throw new Error("Unauthorized")
 
       const User = await userModel.findById(user._id);
@@ -454,7 +760,7 @@ const userResolvers = {
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
 
       const User = await userModel.findById(userId);
-      User.discount.push({ code, discount, date });
+      User.discount.push({ code, discount, date, status: "active" });
       return await User.save();
     },
 
@@ -485,22 +791,22 @@ const userResolvers = {
       if (!user) throw new Error("Unauthorized");
       const userDoc = await userModel.findById(user._id);
       if (!userDoc) throw new Error("کاربر یافت نشد");
-      
+
       // پیدا کردن رکورد دوره
       const progressObj = userDoc.courseProgress.find(cp => cp.courseId.toString() === courseId);
       const isFirstTime = !progressObj; // آیا این اولین بار است که کاربر progress ثبت می‌کند؟
-      
+
       if (progressObj) {
         progressObj.progress = progress;
       } else {
         userDoc.courseProgress.push({ courseId, progress });
-        
+
         // اگر اولین بار است، views دوره را افزایش بده
         if (isFirstTime) {
-          await Course.findByIdAndUpdate(courseId, { $inc: { views: 1 } });
+          await Course.findByIdAndUpdate(courseId, { $inc: { entry: 1 } });
         }
       }
-      
+
       await userDoc.save();
       return userDoc;
     },
@@ -513,6 +819,37 @@ const userResolvers = {
         { new: true }
       );
       return updatedUser;
+    },
+
+    savePushSubscription: async (_, { subscription }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+
+      const updatedUser = await userModel.findByIdAndUpdate(
+        user._id,
+        { subscription },
+        { new: true }
+      );
+
+      return updatedUser;
+    },
+
+    sendPushNotification: async (_, { userId, title, body }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner")
+        throw new Error("Only admin can send notifications");
+
+      const targetUser = await userModel.findById(userId);
+      if (!targetUser || !targetUser.subscription) throw new Error("No subscription found");
+
+      const payload = JSON.stringify({ title, body });
+
+      try {
+        await webpush.sendNotification(targetUser.subscription, payload);
+        return true;
+      } catch (err) {
+        console.error("Push error:", err);
+        throw new Error("Failed to send notification");
+      }
     }
   }
 };

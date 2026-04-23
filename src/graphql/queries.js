@@ -11,6 +11,7 @@ const queries = gql`
 
     # Product Queries
     products(page: Int, limit: Int, search: String): PaginatedProducts!
+    allProducts(page: Int, limit: Int): PaginatedProducts!
     productsByCategory(
       majorCat: String!, 
       minorCat: String, 
@@ -31,6 +32,10 @@ const queries = gql`
     productsByAuthor(authorId: ID!): [Product]
     productsByStatus(status: String!): [Product]
     homePageData: HomePageData
+    homePageHero: HomePageHero
+    homePageBooks: HomePageBooks
+    homePageArticles: HomePageArticles
+    homePageCourses: HomePageCourses
     suggestedProducts(majorCat: String!, minorCat: String, cat: String): [Product]
     offer(page: Int, limit: Int): PaginatedProducts!
     localBasket(basket: [BasketInput!]!): UserFullBasket
@@ -44,8 +49,9 @@ const queries = gql`
     # Order Queries
     orders(page: Int, limit: Int, search: String): PaginatedOrders
     order(id: ID!): Order
-    ordersByUser(userId: ID!, page: Int, limit: Int): PaginatedOrders
+    ordersByUser(page: Int, limit: Int): PaginatedOrders
     ordersByStatus(status: [String]!): [Order]
+    freeOrders(page: Int, limit: Int, search: String): PaginatedOrders
 
     # Checkout Queries
     checkouts: [Checkout]
@@ -57,7 +63,9 @@ const queries = gql`
     comment(id: ID!): Comment
     commentsByProduct(productId: ID!, page: Int, limit: Int): PaginatedComments!
     commentsByArticle(articleId: ID!, page: Int, limit: Int): PaginatedComments!
-    commentsByUser(userId: ID!, page: Int, limit: Int): PaginatedComments!
+    commentsByPackage(packageId: ID!, page: Int, limit: Int): PaginatedComments!
+    commentsById(type: String! ,id: ID!, page: Int, limit: Int): PaginatedComments!
+    commentsByUser(page: Int, limit: Int): PaginatedComments!
     commentsByStatus(status: String!, page: Int, limit: Int): PaginatedComments!
 
     # Article Queries
@@ -98,7 +106,7 @@ const queries = gql`
     # Ticket Queries
     tickets(page: Int, limit: Int, search: String): PaginatedTickets
     ticket(id: ID!): Ticket
-    ticketsByUser(userId: ID!, page: Int, limit: Int): PaginatedTickets
+    ticketsByUser(page: Int, limit: Int): PaginatedTickets
     ticketsByStatus(status: [String]!): [Ticket]
 
     # ShippingCost Queries
@@ -108,6 +116,23 @@ const queries = gql`
 
     # Province Queries
     provinces: [Province]
+
+    # Package Queries
+    packages(
+      page: Int, 
+      limit: Int, 
+      category: String,
+      state: String, 
+      search: String
+    ): PaginatedPackages
+    package(id: ID!): Package
+    packagesByCategory(
+      category: String!, 
+      limit: Int
+    ): [Package]
+
+    # Sales Analytics Queries
+    salesAnalytics(year: Int): SalesAnalytics
   }
 `;
 
