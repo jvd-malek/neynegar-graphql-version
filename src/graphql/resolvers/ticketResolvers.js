@@ -64,13 +64,13 @@ const ticketResolvers = {
           select: '_id name phone status'
         });
     },
-    ticketsByUser: async (_, { userId, page = 1, limit = 10 }, { user }) => {
+    ticketsByUser: async (_, { page = 1, limit = 10 }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
       try {
         const skip = (page - 1) * limit;
         const [tickets, total] = await Promise.all([
-          Ticket.find({ userId })
+          Ticket.find({ userId: user._id })
             .populate({
               path: 'userId',
               select: '_id name phone status'
@@ -78,7 +78,7 @@ const ticketResolvers = {
             .skip(skip)
             .limit(limit)
             .sort({ _id: -1 }),
-          Ticket.countDocuments({ userId })
+          Ticket.countDocuments({ userId: user._id })
         ]);
 
         return {
