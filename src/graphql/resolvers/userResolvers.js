@@ -54,6 +54,7 @@ const userResolvers = {
         const [users, total] = await Promise.all([
           userModel.find(searchQuery)
             .populate('bascket.productId')
+            .populate('bascket.packageId')
             .populate('favorite.productId')
             .populate('readingList.articleId')
             .skip(skip)

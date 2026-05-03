@@ -195,7 +195,7 @@ const types = gql`
   type CostHistory {
     cost: Float!
     date: String!
-    count: Int!
+    count: Int
   }
 
   type DiscountHistory {
@@ -261,10 +261,8 @@ const types = gql`
     _id: ID!
     txt: String!
     status: String!
-    star: Int!
+    star: Float!
     like: Int!
-    productId: Product
-    articleId: Article
     target: CommentsTarget
     userId: User!
     replies: [Reply]
@@ -275,8 +273,14 @@ const types = gql`
   type CommentsTarget {
     type: String!
     refId: ID!
+    data: TargetData 
   }
 
+  type TargetData {
+    _id: ID
+    title: String
+    cover: String
+  }
     
   type PaginatedComments {
     comments: [Comment!]!
@@ -606,15 +610,13 @@ const types = gql`
 
   input CommentInput {
     txt: String!
-    star: Int!
-    productId: ID
-    articleId: ID
-    target: TargetInput
+    star: Float!
+    target: CommentTargetInput!
   }
 
-  input TargetInput {
+  input CommentTargetInput {
     type: String!
-    id: ID
+    id: ID!
   }
 
   input ReplyInput {

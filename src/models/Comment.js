@@ -25,14 +25,6 @@ const commentSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'تعداد لایک نمی‌تواند منفی باشد']
   },
-  productId: {
-    type: mongoose.Types.ObjectId,
-    ref: 'Product'
-  },
-  articleId: {
-    type: mongoose.Types.ObjectId,
-    ref: 'Article'
-  },
   target: {
     type: {
       type: String,
@@ -79,9 +71,9 @@ const commentSchema = new mongoose.Schema({
 });
 
 // Add indexes
-commentSchema.index({ productId: 1 });
-commentSchema.index({ articleId: 1 });
+commentSchema.index({ "target.type": 1, "target.refId": 1 });
 commentSchema.index({ userId: 1 });
 commentSchema.index({ status: 1 });
+commentSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Comment', commentSchema); 

@@ -35,6 +35,7 @@ const resolvers = {
   ...scalarResolvers,
   Query: Object.assign({}, ...modules.map(r => r.Query)),
   Mutation: Object.assign({}, ...modules.map(r => r.Mutation)),
+  Comment: commentResolvers.Comment
 };
 
 module.exports = resolvers;

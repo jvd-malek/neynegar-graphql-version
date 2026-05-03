@@ -547,6 +547,7 @@ const productResolvers = {
                 { productArticleId: minorCat },
                 { publisherArticleId: minorCat },
               ],
+              showCount: { $gt: 0 }
             })
             .select(
               '_id title desc price discount popularity cover brand majorCat minorCat authorId count showCount'
@@ -558,7 +559,7 @@ const productResolvers = {
           // If we have less than 10 products and cat is provided, fetch additional products
           if (products.length < 10 && cat) {
             const additionalProducts = await Product
-              .find({ majorCat: cat })
+              .find({ majorCat: cat, showCount: { $gt: 0 } })
               .sort({ popularity: -1, _id: -1 })
               .limit(10 - products.length)
               .lean();
@@ -570,7 +571,7 @@ const productResolvers = {
         }
 
         const products = await Product
-          .find({ majorCat, minorCat })
+          .find({ majorCat, minorCat, showCount: { $gt: 0 } })
           .select(
             '_id title desc price finalPrice discount state popularity cover brand majorCat minorCat authorId count showCount'
           )
@@ -581,7 +582,7 @@ const productResolvers = {
         // If we have less than 10 products and cat is provided, fetch additional products
         if (products.length < 10) {
           const additionalProducts = await Product
-            .find({ majorCat })
+            .find({ majorCat, showCount: { $gt: 0 } })
             .select(
               '_id title desc price finalPrice discount popularity cover brand majorCat minorCat authorId count showCount'
             )
@@ -997,24 +998,14 @@ const productResolvers = {
           throw new Error("Product not found");
         }
 
-        console.log('=== Updating Product Images ===');
-        console.log('Product ID:', id);
-        console.log('Old cover:', oldProduct.cover);
-        console.log('Old images:', oldProduct.images);
-        console.log('New cover:', input.cover);
-        console.log('New images:', input.images);
-        console.log('Current working directory:', process.cwd());
-
         // حذف تصاویر قدیمی که در input جدید نیستند
         if (oldProduct.cover && oldProduct.cover !== input.cover) {
-          console.log('Deleting old cover:', oldProduct.cover);
           deleteFile(oldProduct.cover);
         }
 
         if (oldProduct.images && oldProduct.images.length > 0) {
           const imagesToDelete = oldProduct.images.filter(img => !input.images.includes(img));
           if (imagesToDelete.length > 0) {
-            console.log('Images to delete:', imagesToDelete);
             deleteFiles(imagesToDelete);
           }
         }
@@ -1031,7 +1022,6 @@ const productResolvers = {
           { new: true, runValidators: true }
         );
 
-        console.log('Product images updated successfully');
         return updatedProduct;
       } catch (error) {
         console.error('Error in updateProductImages:', error);
