@@ -292,6 +292,7 @@ const productResolvers = {
         .populate("authorArticleId", "_id title desc")
         .populate("publisherArticleId", "_id title desc")
         .populate("productArticleId", "_id title desc")
+        .populate("faqTemplateIds")
         .populate("comments")
         .populate({
           path: "comments",
@@ -865,6 +866,8 @@ const productResolvers = {
           ...input,
           cover: input.cover || '',
           images: input.images || [],
+          features: input.features || [],
+          faqTemplateIds: input.faqTemplateIds || [],
           // Set default article IDs if not provided
           authorArticleId: input.authorArticleId || defaultArticleIds[0],
           publisherArticleId: input.publisherArticleId || defaultArticleIds[1],
@@ -912,6 +915,12 @@ const productResolvers = {
         if (input.minorCat !== undefined) updateData.minorCat = input.minorCat;
         if (input.cover !== undefined) updateData.cover = input.cover;
         if (input.images !== undefined) updateData.images = input.images;
+
+        // Handle features
+        if (input.features !== undefined) updateData.features = input.features;
+
+        // Handle FAQs
+        if (input.faqTemplateIds !== undefined) updateData.faqTemplateIds = input.faqTemplateIds;
 
         // Handle article IDs with defaults
         const defaultArticleIds = [
@@ -1136,107 +1145,144 @@ const productResolvers = {
       }
     },
 
-    // Test mutation for debugging file paths in cPanel
-    testFilePaths: async (_, { filePath }, { user }) => {
-      if (!user) throw new Error("Unauthorized")
-      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
+    // ============ FEATURES MUTATIONS ============
+
+    updateProductFeatures: async (_, { id, input }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
 
       try {
-        console.log('=== Testing File Path Detection ===');
-        console.log('Input file path:', filePath);
-        console.log('Current working directory:', process.cwd());
-
-        // Explore current directory structure
-        console.log('\n--- Current Directory Structure ---');
-        exploreDirectory(process.cwd());
-
-        // Explore uploads directory if it exists
-        const uploadsPath = path.join(process.cwd(), 'uploads');
-        if (require('fs').existsSync(uploadsPath)) {
-          console.log('\n--- Uploads Directory Structure ---');
-          exploreDirectory(uploadsPath);
+        const product = await Product.findById(id);
+        if (!product) {
+          throw new Error("Product not found");
         }
 
-        // Explore parent directories
-        const parentPath = path.join(process.cwd(), '..');
-        if (require('fs').existsSync(parentPath)) {
-          console.log('\n--- Parent Directory Structure ---');
-          exploreDirectory(parentPath);
-        }
+        // جایگزین کردن کامل features
+        product.features = input.features || [];
 
-        const actualPath = getActualFilePath(filePath);
-        console.log('\n--- File Path Detection Result ---');
-        console.log('Detected actual path:', actualPath);
+        const updatedProduct = await product.save();
 
-        if (actualPath) {
-          const exists = require('fs').existsSync(actualPath);
-          console.log('File exists at actual path:', exists);
-        }
+        return updatedProduct
 
-        return {
-          success: true,
-          inputPath: filePath,
-          actualPath: actualPath,
-          currentWorkingDir: process.cwd(),
-          message: 'Check server logs for detailed directory structure and file path detection'
-        };
       } catch (error) {
-        console.error('Error testing file paths:', error);
-        throw new Error(error.message || "خطا در تست مسیر فایل‌ها");
+        console.error('Error updating product features:', error);
+        throw new Error(error.message || "خطا در بروزرسانی ویژگی‌های محصول");
       }
     },
 
-    // Test mutation for file deletion in cPanel
-    testFileDeletion: async (_, { filePath }, { user }) => {
-      if (!user) throw new Error("Unauthorized")
-      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
+    addSingleFeature: async (_, { id, input }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
 
       try {
-        console.log('=== Testing File Deletion ===');
-        console.log('File to delete:', filePath);
-
-        // Check if file exists before deletion
-        const actualPath = getActualFilePath(filePath);
-        if (!actualPath) {
-          return {
-            success: false,
-            message: 'File not found',
-            inputPath: filePath,
-            actualPath: null
-          };
+        const product = await Product.findById(id);
+        if (!product) {
+          throw new Error("Product not found");
         }
 
-        const fs = require('fs');
-        const existsBefore = fs.existsSync(actualPath);
-        console.log('File exists before deletion:', existsBefore);
-
-        if (existsBefore) {
-          // Try to delete the file
-          deleteFile(filePath);
-
-          // Check if file still exists after deletion
-          const existsAfter = fs.existsSync(actualPath);
-          console.log('File exists after deletion:', existsAfter);
-
-          return {
-            success: true,
-            message: existsAfter ? 'File deletion failed' : 'File deleted successfully',
-            inputPath: filePath,
-            actualPath: actualPath,
-            deleted: !existsAfter
-          };
-        } else {
-          return {
-            success: false,
-            message: 'File does not exist',
-            inputPath: filePath,
-            actualPath: actualPath
-          };
+        // بررسی تکراری نبودن کلید
+        const existingKey = product.features.find(f => f.key === input.key);
+        if (existingKey) {
+          throw new Error(`ویژگی با کلید "${input.key}" قبلاً وجود دارد`);
         }
+
+        product.features.push({
+          key: input.key,
+          value: input.value
+        });
+
+        const updatedProduct = await product.save();
+
+        return updatedProduct
+
       } catch (error) {
-        console.error('Error testing file deletion:', error);
-        throw new Error(error.message || "خطا در تست حذف فایل");
+        console.error('Error adding feature:', error);
+        throw new Error(error.message || "خطا در اضافه کردن ویژگی");
       }
+    },
+
+    // ============ FAQ MUTATIONS ============
+
+    updateProductFaqTemplates: async (_, { id, faqTemplateIds }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
+
+      try {
+        const product = await Product.findByIdAndUpdate(
+          id,
+          { faqTemplateIds },
+          { new: true }
+        ).populate('faqTemplateIds');
+
+        if (!product) throw new Error("Product not found");
+        return product;
+      } catch (error) {
+        throw new Error(error.message || "خطا در بروزرسانی گروه سوالات محصول");
+      }
+    },
+
+    addFaqTemplateToProduct: async (_, { productId, templateId }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
+
+      try {
+        const product = await Product.findByIdAndUpdate(
+          productId,
+          { $addToSet: { faqTemplateIds: templateId } },
+          { new: true }
+        ).populate('faqTemplateIds');
+
+        if (!product) throw new Error("Product not found");
+        return product;
+      } catch (error) {
+        throw new Error(error.message || "خطا در افزودن گروه سوالات به محصول");
+      }
+    },
+
+    removeFaqTemplateFromProduct: async (_, { productId, templateId }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
+
+      try {
+        const product = await Product.findByIdAndUpdate(
+          productId,
+          { $pull: { faqTemplateIds: templateId } },
+          { new: true }
+        ).populate('faqTemplateIds');
+
+        if (!product) throw new Error("Product not found");
+        return product;
+      } catch (error) {
+        throw new Error(error.message || "خطا در حذف گروه سوالات از محصول");
+      }
+    },
+  },
+
+  Product: {
+    faqs: async (product) => {
+      // اگر faqTemplateIds populate شده
+      if (product.faqTemplateIds && product.faqTemplateIds.length > 0) {
+        const templates = product.faqTemplateIds;
+        const allFaqs = [];
+        templates.forEach(template => {
+          if (template.faqs) {
+            allFaqs.push(...template.faqs);
+          }
+        });
+        return allFaqs;
+      }
+
+      // اگر populate نشده، خودمون fetch کنیم
+      if (product.faqTemplateIds && product.faqTemplateIds.length > 0) {
+        const templateIds = product.faqTemplateIds;
+        const templates = await FAQTemplate.find({
+          _id: { $in: templateIds },
+          isActive: true
+        });
+        return templates.flatMap(t => t.faqs);
+      }
+
+      return [];
     }
   }
 };

@@ -36,8 +36,11 @@ const mutations = gql`
     updateProductCost(id: ID!, cost: Float!, count: Int!): Product
     updateProductDiscount(id: ID!, discount: Int!): Product
     updateProductStatus(id: ID!, status: String!): Product
-    testFilePaths(filePath: String!): TestFilePathsResponse
-    testFileDeletion(filePath: String!): TestFileDeletionResponse
+    updateProductFaqTemplates(id: ID!, faqTemplateIds: [ID]!): Product
+    addFaqTemplateToProduct(productId: ID!, templateId: ID!): Product
+    removeFaqTemplateFromProduct(productId: ID!, templateId: ID!): Product
+    updateProductFeatures(id: ID!, input: UpdateProductFeaturesInput!): Product
+    addSingleFeature(id: ID!, input: FeatureInput!): Product
 
     # Order Mutations
     createOrder(input: OrderInput!): Order
@@ -64,6 +67,13 @@ const mutations = gql`
     updateCommentStatus(id: ID!, status: String!): Comment
     likeComment(id: ID!): Comment
     likeReply(commentId: ID!, replyIndex: Int!): Comment
+
+    # FAQ Template Mutations
+    createFAQTemplate(input: FAQTemplateInput!): FAQTemplate
+    updateFAQTemplate(id: ID!, input: UpdateFAQTemplateInput!): FAQTemplate
+    deleteFAQTemplate(id: ID!): Boolean
+    addFAQToTemplate(id: ID!, question: String!, answer: String!): FAQTemplate
+    removeFAQFromTemplate(id: ID!, questionIndex: Int!): FAQTemplate
 
     # Article Mutations
     createArticle(input: ArticleInput!): Article

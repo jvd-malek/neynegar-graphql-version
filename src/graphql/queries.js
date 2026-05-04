@@ -58,6 +58,11 @@ const queries = gql`
     checkout(id: ID!): Checkout
     checkoutsByUser(userId: ID!): [Checkout]
 
+    # FAQ Template Queries
+    faqTemplates(category: String): [FAQTemplate]
+    faqTemplate(id: ID!): FAQTemplate
+    activeFaqTemplates: [FAQTemplate]
+
     # Comment Queries
     comments(page: Int, limit: Int): PaginatedComments!
     comment(id: ID!): Comment

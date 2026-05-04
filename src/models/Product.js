@@ -145,6 +145,34 @@ const productSchema = new mongoose.Schema({
     maxLength: [60, 'دسته‌بندی فرعی نمی‌تواند بیشتر از 60 کاراکتر باشد'],
     trim: true
   },
+  features: {
+    type: [{
+      key: {
+        type: String,
+        required: [true, 'عنوان ویژگی الزامی است'],
+        maxLength: [60, 'عنوان ویژگی نمی‌تواند بیشتر از 60 کاراکتر باشد'],
+        trim: true
+      },
+      value: {
+        type: String,
+        required: [true, 'مقدار ویژگی الزامی است'],
+        maxLength: [200, 'مقدار ویژگی نمی‌تواند بیشتر از 200 کاراکتر باشد'],
+        trim: true
+      }
+    }],
+    default: [],
+    validate: {
+      validator: function (arr) {
+        const keys = arr.map(item => item.key);
+        return keys.length === new Set(keys).size;
+      },
+      message: 'عناوین ویژگی‌ها نمی‌توانند تکراری باشند'
+    }
+  },
+  faqTemplateIds: [{
+    type: mongoose.Types.ObjectId,
+    ref: 'FAQTemplate'
+  }],
   cover: {
     type: String,
     required: [true, 'تصویر اصلی الزامی است']
@@ -194,6 +222,13 @@ productSchema.virtual('comments', {
   foreignField: 'productId'
 });
 
+// Virtual for populated FAQ templates
+productSchema.virtual('faqTemplates', {
+  ref: 'FAQTemplate',
+  localField: 'faqTemplateIds',
+  foreignField: '_id'
+});
+
 productSchema.virtual('currentPrice').get(function () {
   const price = this.price;
   const currentPrice = price.at(-1)?.price
@@ -224,5 +259,6 @@ productSchema.index({ title: 'text', desc: 'text' });
 productSchema.index({ majorCat: 1, minorCat: 1 });
 productSchema.index({ status: 1 });
 productSchema.index({ popularity: -1 });
+productSchema.index({ faqTemplateIds: 1 });
 
-module.exports = mongoose.model('Product', productSchema); 
+module.exports = mongoose.model('Product', productSchema);

@@ -13,6 +13,7 @@ const groupDiscountResolvers = require('./groupDiscountResolvers');
 const shippingCostResolvers = require('./shippingCostResolvers');
 const provinceResolvers = require('./provinceResolvers');
 const packageResolvers = require('./packageResolvers');
+const faqResolvers = require('./faqResolvers');
 
 const modules = [
   userResolvers,
@@ -29,13 +30,15 @@ const modules = [
   shippingCostResolvers,
   provinceResolvers,
   packageResolvers,
+  faqResolvers
 ];
 
 const resolvers = {
   ...scalarResolvers,
   Query: Object.assign({}, ...modules.map(r => r.Query)),
   Mutation: Object.assign({}, ...modules.map(r => r.Mutation)),
-  Comment: commentResolvers.Comment
+  Comment: commentResolvers.Comment,
+  Product: productResolvers.Product
 };
 
 module.exports = resolvers;

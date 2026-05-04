@@ -143,12 +143,35 @@ const types = gql`
     minorCat: String
     cover: String
     images: [String]
+    features: [Feature]
+    faqTemplateIds: [ID]
+    faqs: [FAQ]
     currentPrice: Float
     currentDiscount: Int
     finalPrice: Float
     comments: [Comment]
     createdAt: String
     updatedAt: String
+  }
+
+  type Feature {
+    key: String!
+    value: String!
+  }
+
+  type FAQTemplate {
+    _id: ID!
+    name: String!
+    category: String!
+    faqs: [FAQ!]!
+    isActive: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+
+  type FAQ {
+    question: String!
+    answer: String!
   }
 
   type BasketProduct {
@@ -457,6 +480,34 @@ const types = gql`
     relatedProducts: [ID]
   }
 
+  input FeatureInput {
+    key: String!
+    value: String!
+  }
+
+  input FAQInput {
+    question: String!
+    answer: String!
+  }
+
+  input FAQTemplateInput {
+    name: String!
+    category: String!
+    faqs: [FAQInput!]!
+    isActive: Boolean
+  }
+
+  input UpdateFAQTemplateInput {
+    name: String
+    category: String
+    faqs: [FAQInput]
+    isActive: Boolean
+  }
+
+  input UpdateProductFeaturesInput {
+    features: [FeatureInput!]
+  }
+
   input ProductInput {
     title: String!
     desc: String!
@@ -479,6 +530,8 @@ const types = gql`
     minorCat: String!
     cover: String!
     images: [String]
+    features: [FeatureInput]
+    faqTemplateIds: [ID]  
     authorArticleId: ID
     publisherArticleId: ID
     productArticleId: ID
@@ -506,6 +559,8 @@ const types = gql`
     minorCat: String
     cover: String
     images: [String]
+    features: [FeatureInput]
+    faqTemplateIds: [ID]  
     authorArticleId: ID
     publisherArticleId: ID
     productArticleId: ID
@@ -714,26 +769,9 @@ const types = gql`
     tags: [String]
   }
 
-  # نوع جدید برای هر آیتم محصول داخل پکیج
   input PackageProductInput {
     product: ID!
     quantity: Int
-  }
-  
-  type TestFilePathsResponse {
-    success: Boolean!
-    inputPath: String
-    actualPath: String
-    currentWorkingDir: String
-    message: String!
-  }
-
-  type TestFileDeletionResponse {
-    success: Boolean!
-    message: String!
-    inputPath: String
-    actualPath: String
-    deleted: Boolean
   }
 
   # Sales Analytics Types
