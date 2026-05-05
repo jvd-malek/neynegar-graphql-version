@@ -3,6 +3,7 @@ const Product = require('../../models/Product');
 const Article = require('../../models/Article');
 const Course = require('../../models/Course');
 const Package = require('../../models/Package');
+const Alert = require('../../models/Alert');
 
 const commentResolvers = {
   Query: {
@@ -181,9 +182,30 @@ const commentResolvers = {
     createComment: async (_, { input }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
-      // اعتبارسنجی target
       if (!input.target || !input.target.type || !input.target.id) {
         throw new Error("Target type and id are required");
+      }
+
+      // پیدا کردن اسم محصول/مقاله/پکیج/دوره برای متن آلرت
+      let targetName = '';
+      let targetModel;
+      switch (input.target.type) {
+        case 'Product':
+          targetModel = await Product.findById(input.target.id).select('title');
+          targetName = targetModel?.title || 'محصول';
+          break;
+        case 'Article':
+          targetModel = await Article.findById(input.target.id).select('title');
+          targetName = targetModel?.title || 'مقاله';
+          break;
+        case 'Package':
+          targetModel = await Package.findById(input.target.id).select('title');
+          targetName = targetModel?.title || 'پکیج';
+          break;
+        case 'Course':
+          targetModel = await Course.findById(input.target.id).select('title');
+          targetName = targetModel?.title || 'دوره';
+          break;
       }
 
       const comment = new Comment({
@@ -198,7 +220,20 @@ const commentResolvers = {
         status: "در انتظار تایید"
       });
 
-      return await comment.save();
+      const savedComment = await comment.save();
+
+      // ✨ آلرت شخصی: تایید ثبت نظر
+      const starEmoji = input.star >= 4 ? '🌟' : input.star >= 3 ? '⭐' : '';
+      await Alert.create({
+        title: '💬 نظرت با موفقیت ثبت شد',
+        body: `سلام!\n\nنظرت روی "${targetName}" ثبت شد و بعد از تایید نمایش داده میشه.\n\n${starEmoji} امتیاز: ${input.star} از ۵\n📝 متن نظر: "${input.txt.length > 80 ? input.txt.substring(0, 80) + '...' : input.txt}"\n\n⏳ معمولاً کمتر از ۲۴ ساعت تایید میشه.\n🙏 ممنون که نظرت رو باهامون به اشتراک گذاشتی!`,
+        target: 'user',
+        targetUsers: [user._id],
+        source: 'manual',
+        sourceId: savedComment._id.toString()
+      });
+
+      return savedComment;
     },
 
     updateComment: async (_, { id, input }) => {
@@ -225,7 +260,9 @@ const commentResolvers = {
     addReply: async (_, { commentId, input }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
-      const comment = await Comment.findById(commentId);
+      const comment = await Comment.findById(commentId)
+        .populate('userId', '_id name');
+
       if (!comment) throw new Error("Comment not found");
 
       comment.replies.push({
@@ -235,7 +272,21 @@ const commentResolvers = {
         createdAt: new Date()
       });
 
-      return await comment.save();
+      const savedComment = await comment.save();
+
+      // ✨ آلرت برای صاحب کامنت اصلی - اگه ریپلای‌کننده خودش نباشه
+      if (comment.userId && comment.userId._id.toString() !== user._id.toString()) {
+        await Alert.create({
+          title: '💬 یه پاسخ جدید برای نظرت اومد!',
+          body: `سلام ${comment.userId.name} عزیز!\n\nیه پاسخ جدید روی نظرت ثبت شد.\n\n📝 متن پاسخ: "${input.txt.length > 80 ? input.txt.substring(0, 80) + '...' : input.txt}"\n\nبرای مشاهده کامل پاسخ به سایت مراجعه کن.\n\n💡 می‌تونی به این پاسخ، ریپلای بدی و گفتگو رو ادامه بدی!`,
+          target: 'user',
+          targetUsers: [comment.userId._id],
+          source: 'manual',
+          sourceId: savedComment._id.toString()
+        });
+      }
+
+      return savedComment;
     },
 
     updateCommentStatus: async (_, { id, status }) => {

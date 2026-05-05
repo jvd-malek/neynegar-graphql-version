@@ -5,6 +5,7 @@ const { verifypayment } = require('../../middleware/zarinpal');
 const Package = require('../../models/Package');
 const jalaali = require('jalaali-js');
 const sendSms = require('../../utils/sendSms');
+const Alert = require('../../models/Alert');
 
 function toPersianDate(date) {
   const persianMonths = [
@@ -417,8 +418,8 @@ const orderResolvers = {
 
         // تبدیل Map به Array و مرتب‌سازی
         const monthlyDataArray = monthlyData.map(month => {
-          
-            // محصولات برتر ماه - فقط ۱۰ تای اول
+
+          // محصولات برتر ماه - فقط ۱۰ تای اول
           const products = Array.from(month.products.values())
             .sort((a, b) =>
               b.totalProfit - a.totalProfit ||
@@ -576,18 +577,36 @@ const orderResolvers = {
       );
     },
 
-    updateOrderPostVerify: async (_, { id, postVerify }) => {
-      return await Order.findByIdAndUpdate(
+    updateOrderPostVerify: async (_, { id, postVerify }, { user }) => {
+      if (!user) throw new Error("Unauthorized");
+      if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
+
+      const order = await Order.findByIdAndUpdate(
         id,
         { postVerify },
         { new: true }
-      );
+      ).populate('userId', '_id name phone');
+
+      // ✨ آلرت شخصی برای کاربر سفارش
+      if (order && order.userId) {
+        await Alert.create({
+          title: '📦 سفارشت ارسال شد!',
+          body: `سلام ${order.userId.name} عزیز!\n\nسفارشت آماده و تحویل پست شد.\n\n🔖 کد رهگیری: ${postVerify}\n📱 می‌تونی وضعیت سفارش رو از طریق کد رهگیری پیگیری کنی.\n\n🙏 ممنون که نِی‌نگار رو انتخاب کردی!`,
+          target: 'user',
+          targetUsers: [order.userId._id],
+          source: 'order',
+          sourceId: order._id.toString()
+        });
+      }
+
+      return order;
     },
 
     verifyOrderPayment: async (_, { orderId }, { user }) => {
       if (!user) throw new Error("Unauthorized");
 
-      const order = await Order.findById(orderId);
+      const order = await Order.findById(orderId)
+        .populate('userId', '_id name phone');
 
       if (!order) throw new Error("Order not found");
       if (order.status !== "پرداخت نشده") return order;
@@ -597,19 +616,15 @@ const orderResolvers = {
         authority: order.authority
       });
 
-      if (verifyRes && verifyRes.data && verifyRes.data.code === 100 || verifyRes.data.code === 101) {
+      if (verifyRes && verifyRes.data && (verifyRes.data.code === 100 || verifyRes.data.code === 101)) {
         order.status = "در انتظار تایید";
         order.paymentId = verifyRes.data.ref_id;
         await order.save();
 
-        const userObj = await User.findById(order.userId);
+        const userObj = await User.findById(order.userId._id || order.userId);
         if (userObj) {
+          userObj.bascket = [];
 
-
-          // حذف سبد خرید کاربر پس از ثبت سفارش
-          userObj.bascket = []
-
-          // منقضی کردن کد تخفیف
           if (order.discountCode) {
             userObj.discount = userObj.discount.map(d =>
               d.code === order.discountCode ? { ...d, status: 'inactive' } : d
@@ -619,7 +634,16 @@ const orderResolvers = {
           userObj.totalBuy += order.totalPrice;
           await userObj.save();
 
-          // ارسال پیامک
+          // ✨ آلرت شخصی: پرداخت موفق
+          await Alert.create({
+            title: '✅ پرداخت با موفقیت انجام شد',
+            body: `سلام ${userObj.name} عزیز!\n\nپرداخت سفارشت با موفقیت انجام شد و سفارش در صف بررسی قرار گرفت.\n\n🔖 شماره پیگیری: ${verifyRes.data.ref_id}\n\nبه محض آماده‌سازی، بهت اطلاع می‌دیم.\n🙏 از اعتمادت به نِی‌نگار سپاسگزاریم!`,
+            target: 'user',
+            targetUsers: [userObj._id],
+            source: 'order',
+            sourceId: order._id.toString()
+          });
+
           try {
             await sendSms({
               to: userObj.phone,
@@ -633,8 +657,6 @@ const orderResolvers = {
 
         // کاهش موجودی محصولات و پکیج‌ها
         for (const item of order.products) {
-
-          // 1. کاهش موجودی محصول تکی
           if (item.productId) {
             const productDoc = await Product.findById(item.productId);
             if (productDoc) {
@@ -647,21 +669,16 @@ const orderResolvers = {
                 $set: { showCount: finalShowCount, count: newCount }
               });
             }
-          }
-
-          // 2. کاهش موجودی پکیج و محصولات داخل آن
-          else if (item.packageId) {
+          } else if (item.packageId) {
             const packageDoc = await Package.findById(item.packageId).populate('products.product');
             if (packageDoc) {
-
               await Package.findByIdAndUpdate(item.packageId, {
                 $inc: { totalSell: item.count },
               });
 
-              // کاهش موجودی تک‌تک محصولات داخل پکیج
               for (const pkgProduct of packageDoc.products) {
                 const prod = pkgProduct.product;
-                const quantityInPackage = pkgProduct.quantity * item.count; // تعداد کل مصرف شده از این محصول
+                const quantityInPackage = pkgProduct.quantity * item.count;
 
                 if (prod) {
                   const newShowCount = prod.showCount - quantityInPackage;
@@ -689,11 +706,9 @@ const orderResolvers = {
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
 
       try {
-        // Find or create user for free order
         let customerUser = await User.findOne({ phone: input.customerPhone });
 
         if (!customerUser) {
-          // Create new user for the customer
           let userInputs = {
             status: 'user',
             name: input.customerName,
@@ -716,7 +731,6 @@ const orderResolvers = {
           customerUser = new User(userInputs);
           await customerUser.save();
         } else {
-          // Update existing user info with new data
           customerUser.name = input.customerName;
           if (input.customerAddress.length > 0) {
             customerUser.address = input.customerAddress;
@@ -727,9 +741,8 @@ const orderResolvers = {
           await customerUser.save();
         }
 
-        // Create the free order
         const orderData = {
-          products: input.products, // اینجا دیگر input کامل است
+          products: input.products,
           submition: input.submition,
           totalPrice: input.totalPrice * 10,
           discount: input.discount || 0,
@@ -743,10 +756,19 @@ const orderResolvers = {
         const order = new Order(orderData);
         const savedOrder = await order.save();
 
-        // بروزرسانی موجودی (همان منطق verifyOrderPayment)
+        // ✨ آلرت شخصی برای کاربر
+        await Alert.create({
+          title: '🎁 سفارش ویژه‌ات ثبت شد!',
+          body: `سلام ${customerUser.name} عزیز!\n\nسفارش شما با موفقیت ثبت شد و در حال بررسیه.\n\n${input.status === 'ارسال شد' ? '📦 سفارشت به زودی به دستت می‌رسه!' : '⏳ به محض آماده‌سازی بهت اطلاع می‌دیم.'}\n\n🙏 ممنون که نِی‌نگار رو انتخاب کردی!`,
+          target: 'user',
+          targetUsers: [customerUser._id],
+          source: 'order',
+          sourceId: savedOrder._id.toString()
+        });
+
+        // بروزرسانی موجودی
         for (const item of input.products) {
           if (item.productId) {
-            // منطق کاهش موجودی محصول
             const productDoc = await Product.findById(item.productId);
             if (productDoc) {
               const newShowCount = productDoc.showCount - item.count;
@@ -758,7 +780,6 @@ const orderResolvers = {
               });
             }
           } else if (item.packageId) {
-            // منطق کاهش موجودی پکیج (کپی از verifyOrderPayment)
             const packageDoc = await Package.findById(item.packageId).populate('products.product');
             if (packageDoc) {
               const newPackageShowCount = packageDoc.showCount - item.count;
@@ -791,7 +812,7 @@ const orderResolvers = {
       } catch (error) {
         throw new Error("خطا در ایجاد سفارش آزاد: " + error.message);
       }
-    }
+    },
 
   }
 };

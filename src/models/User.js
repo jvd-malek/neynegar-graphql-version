@@ -90,10 +90,6 @@ const userSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'مبلغ کل خرید نمی‌تواند منفی باشد']
   },
-  alert: {
-    type: [String],
-    default: null
-  },
   lastPromoSentAt: {
     type: Number,
     default: null

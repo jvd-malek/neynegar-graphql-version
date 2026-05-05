@@ -4,6 +4,7 @@ const ShippingCost = require('../../models/ShippingCost');
 const userModel = require('../../models/User');
 const { createpayment, verifypayment } = require('../../middleware/zarinpal');
 const Package = require('../../models/Package');
+const Alert = require('../../models/Alert');
 
 const checkoutResolvers = {
   Query: {
@@ -96,10 +97,6 @@ const checkoutResolvers = {
           const finalItemPrice = (itemPrice - discountAmountPerUnit) * item.count;
           const weight = (p.weight || 0) * item.count;
 
-          console.log(finalItemPrice);
-          console.log(p.finalPrice);
-
-
           subtotal += itemPrice * item.count;
           totalDiscount += discountAmountPerUnit * item.count;
           total += finalItemPrice;
@@ -118,24 +115,20 @@ const checkoutResolvers = {
         }
 
         // -----------------------------------------------------
-        // 2) PACKAGE ITEMS (اصلاح شده)
+        // 2) PACKAGE ITEMS
         // -----------------------------------------------------
         const userPackages = User.bascket.filter(item => item.packageId);
 
         if (userPackages.length > 0) {
-
           const packageIds = userPackages.map(item => item.packageId);
-
           const packages = await Package.find({ _id: { $in: packageIds } })
             .populate('products.product');
 
-          // ساخت مپ برای دسترسی سریع
           const packageMap = {};
           packages.forEach(pkg => { packageMap[pkg._id.toString()] = pkg; });
 
           userPackages.forEach(item => {
             const pkg = packageMap[item.packageId.toString()];
-
 
             if (item.count > pkg.showCount) {
               throw new Error(`از پکیج ${pkg.title} فقط ${pkg.showCount} عدد موجود است`);
@@ -187,7 +180,7 @@ const checkoutResolvers = {
           desc: `سفارش با شناسه ${User._id}`
         });
 
-        // ایجاد Order (اصلاح شده برای ذخیره packageId)
+        // ایجاد Order
         const validOrderProducts = enrichedBasket.map((p) => ({
           count: p.count,
           productId: p.productId || null,
@@ -196,7 +189,7 @@ const checkoutResolvers = {
           discount: p.currentDiscount
         }));
 
-        await Order.create({
+        const newOrder = await Order.create({
           userId: User._id,
           products: validOrderProducts,
           submition: shipment,
@@ -205,6 +198,16 @@ const checkoutResolvers = {
           discount: totalDiscount + finalDiscountAmount,
           discountCode: usedDiscountCode,
           authority: payment.authority,
+        });
+
+        // ✨ آلرت شخصی: یادآوری پرداخت
+        await Alert.create({
+          title: '🛒 سبد خریدت آماده پرداخته!',
+          body: `سلام ${User.name} عزیز!\n\nسبد خریدت با موفقیت ثبت شد و آماده پرداخته.\n\n💰 مبلغ قابل پرداخت: ${(amountInRial / 10).toLocaleString('fa-IR')} تومان\n\n⚠️ فرصت پرداخت محدوده! هرچه زودتر پرداخت رو تکمیل کن تا سفارشت با سرعت بیشتری آماده بشه.\n\nاگه پرداخت رو انجام دادی، این پیام رو نادیده بگیر 😊`,
+          target: 'user',
+          targetUsers: [User._id],
+          source: 'order',
+          sourceId: newOrder._id.toString()
         });
 
         return {

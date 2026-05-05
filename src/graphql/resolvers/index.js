@@ -14,6 +14,7 @@ const shippingCostResolvers = require('./shippingCostResolvers');
 const provinceResolvers = require('./provinceResolvers');
 const packageResolvers = require('./packageResolvers');
 const faqResolvers = require('./faqResolvers');
+const alertResolvers = require('./alertResolvers');
 
 const modules = [
   userResolvers,
@@ -30,7 +31,8 @@ const modules = [
   shippingCostResolvers,
   provinceResolvers,
   packageResolvers,
-  faqResolvers
+  faqResolvers,
+  alertResolvers
 ];
 
 const resolvers = {

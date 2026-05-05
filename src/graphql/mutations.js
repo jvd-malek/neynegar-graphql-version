@@ -124,6 +124,12 @@ const mutations = gql`
     deletePackage(id: ID!): Boolean!
     addProductToPackage(packageId: ID!, input: PackageProductInput!): Package!
     removeProductFromPackage(packageId: ID!, productId: ID!): Package!
+
+    # Alert Mutations
+    createAlert(input: AlertInput!): Alert
+    deleteAlert(id: ID!): Boolean
+    markAlertAsRead(alertId: ID!): Alert
+    markAllAlertsAsRead: Boolean
   }
 `;
 

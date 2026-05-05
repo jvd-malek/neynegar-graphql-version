@@ -55,7 +55,6 @@ const types = gql`
     createdAt: String
     updatedAt: String
     courseProgress: [CourseProgress]
-    alert: [String]
   }
 
   type PaginatedUsers {
@@ -862,6 +861,47 @@ const types = gql`
     totalPages: Int!
     currentPage: Int!
     total: Int!
+  }
+
+  # Alert types
+
+  type Alert {
+    _id: ID!
+    title: String!
+    body: String!
+    target: String!
+    targetUsers: [User]
+    targetStatus: String
+    status: String!
+    readBy: [ReadBy]
+    source: String
+    sourceId: String
+    createdAt: String
+    updatedAt: String
+  }
+
+  type ReadBy {
+    userId: User
+    readAt: String
+  }
+
+  type PaginatedAlerts {
+    alerts: [Alert!]!
+    totalPages: Int!
+    currentPage: Int!
+    total: Int!
+  }
+
+  # Input Alert
+  
+  input AlertInput {
+    title: String!
+    body: String!
+    target: String!
+    targetUsers: [ID]
+    targetStatus: String
+    source: String
+    sourceId: String
   }
 `;
 

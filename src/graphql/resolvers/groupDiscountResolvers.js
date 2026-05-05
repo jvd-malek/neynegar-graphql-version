@@ -1,5 +1,6 @@
 const GroupDiscount = require('../../models/GroupDiscount');
 const Product = require('../../models/Product');
+const Alert = require('../../models/Alert');
 
 const groupDiscountResolvers = {
   Query: {
@@ -25,7 +26,7 @@ const groupDiscountResolvers = {
   Mutation: {
     createGroupDiscount: async (_, { input }, { user }) => {
       if (!user || (user.status !== 'admin' && user.status !== 'owner')) throw new Error('Unauthorized');
-      // تبدیل endDate از روز به timestamp
+
       const days = Number(input.endDate);
       const now = Date.now();
       const endDateTimestamp = days * 24 * 60 * 60 * 1000 + now;
@@ -42,29 +43,79 @@ const groupDiscountResolvers = {
         { $set: { discount: [{ discount: input.discount, date: endDateTimestamp }] } }
       );
 
+      // آلرت برای همه کاربران
+      const categoryText = input.minorCat
+        ? `${input.majorCat} ${input.minorCat}`
+        : input.majorCat;
+
+      const brandText = input.brand ? ` برند ${input.brand}` : '';
+
+      await Alert.create({
+        title: `🔥 ${input.discount}٪ تخفیف ویژه روی ${categoryText}`,
+        body: `فرصت استثنایی! ${input.title}\n\n${input.discount}٪ تخفیف ویژه روی تمام محصولات ${categoryText}${brandText} فعال شد.\n\n⏰ فقط ${days} روز فرصت داری!\nهمین حالا محصولات مورد علاقه‌ات رو با تخفیف ویژه بخر.`,
+        target: 'all',
+        source: 'discount',
+        sourceId: savedDiscount._id.toString()
+      });
+
       return savedDiscount;
     },
     updateGroupDiscount: async (_, { id, input }, { user }) => {
       if (!user || (user.status !== 'admin' && user.status !== 'owner')) throw new Error('Unauthorized');
-      // فقط اجازه ویرایش discount و endDate را بده
+
       const prevDiscount = await GroupDiscount.findById(id);
       if (!prevDiscount) throw new Error('GroupDiscount not found');
+
       const updateInput = {};
-      if (typeof input.discount !== 'undefined') updateInput.discount = input.discount;
+      let hasSignificantChange = false;
+      let alertTitle = '';
+      let alertBody = '';
+
+      if (typeof input.discount !== 'undefined' && input.discount !== prevDiscount.discount) {
+        updateInput.discount = input.discount;
+        hasSignificantChange = true;
+
+        if (input.discount > prevDiscount.discount) {
+          alertTitle = `🎉 تخفیف ${prevDiscount.title} بیشتر شد!`;
+          alertBody = `خبر خوب! تخفیف ${prevDiscount.title} از ${prevDiscount.discount}٪ به ${input.discount}٪ افزایش پیدا کرد.\n\nفرصت رو از دست نده، همین الان محصولات مورد نظرت رو با تخفیف بیشتر بخر!`;
+        } else {
+          alertTitle = `⚡ بروزرسانی تخفیف ${prevDiscount.title}`;
+          alertBody = `تخفیف ${prevDiscount.title} به ${input.discount}٪ تغییر کرد.\n\nاگه هنوز دست به کاری نشدی، وقتشه که از این فرصت استفاده کنی!`;
+        }
+      }
+
       if (typeof input.endDate !== 'undefined') {
         const days = Number(input.endDate);
         updateInput.endDate = days * 24 * 60 * 60 * 1000 + Date.now();
+        hasSignificantChange = true;
+
+        alertTitle = alertTitle || `⏰ تمدید تخفیف ${prevDiscount.title}`;
+        alertBody = alertBody
+          ? `${alertBody}\n\n🎁 همچنین زمان تخفیف تا ${days} روز دیگه تمدید شد!`
+          : `خبر خوش! مهلت استفاده از تخفیف ${prevDiscount.title} تمدید شد.\n\n⏰ فقط ${days} روز دیگه فرصت داری تا از این تخفیف ویژه استفاده کنی.\n\nهمین حالا خرید کن و پولت رو پس‌انداز کن!`;
       }
-      // سایر فیلدها (majorCat, minorCat, brand) را تغییر نده
+
       const updatedDiscount = await GroupDiscount.findByIdAndUpdate(id, updateInput, { new: true, runValidators: true });
-      // آپدیت محصولات مرتبط
+
       const productQuery = { majorCat: prevDiscount.majorCat };
       if (prevDiscount.minorCat) productQuery.minorCat = prevDiscount.minorCat;
       if (prevDiscount.brand) productQuery.brand = prevDiscount.brand;
+
       await Product.updateMany(
         productQuery,
         { $set: { discount: [{ discount: updatedDiscount.discount, date: updatedDiscount.endDate }] } }
       );
+
+      if (hasSignificantChange) {
+        await Alert.create({
+          title: alertTitle,
+          body: alertBody,
+          target: 'all',
+          source: 'discount',
+          sourceId: id
+        });
+      }
+
       return updatedDiscount;
     },
     deleteGroupDiscount: async (_, { id }, { user }) => {

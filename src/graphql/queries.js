@@ -138,6 +138,12 @@ const queries = gql`
 
     # Sales Analytics Queries
     salesAnalytics(year: Int): SalesAnalytics
+
+    # Alert Queries
+    alerts(page: Int, limit: Int, source: String): PaginatedAlerts
+    alert(id: ID!): Alert
+    userAlerts(page: Int, limit: Int): PaginatedAlerts
+    unreadAlertCount: Int
   }
 `;
 

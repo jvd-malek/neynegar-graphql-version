@@ -9,6 +9,7 @@ const Course = require('../../models/Course');
 const Product = require('../../models/Product');
 const Package = require('../../models/Package');
 const webpush = require('web-push');
+const Alert = require('../../models/Alert');
 
 webpush.setVapidDetails(
   'mailto:admin@neynegar1.ir',
@@ -760,9 +761,27 @@ const userResolvers = {
       if (!user) throw new Error("Unauthorized")
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized")
 
-      const User = await userModel.findById(userId);
-      User.discount.push({ code, discount, date, status: "active" });
-      return await User.save();
+      const targetUser = await userModel.findById(userId);
+      if (!targetUser) throw new Error("کاربر یافت نشد");
+
+      targetUser.discount.push({ code, discount, date, status: "active" });
+      await targetUser.save();
+
+      // محاسبه چند روز اعتبار
+      const now = Date.now();
+      const daysLeft = Math.ceil((date - now) / (1000 * 60 * 60 * 24));
+
+      // ✨ آلرت شخصی برای کاربر
+      await Alert.create({
+        title: '🎁 کد تخفیف ویژه برات فعال شد!',
+        body: `سلام ${targetUser.name} عزیز!\n\nیه خبر خوب برات داریم! یه کد تخفیف ویژه به مناسبت خریدهای قبلی‌ات برات فعال کردیم.\n\n🎯 کد تخفیف: ${code}\n💰 درصد تخفیف: ${discount}٪\n⏰ فقط ${daysLeft} روز فرصت داری!\n\nمنتظر چی هستی؟ همین الان برو خرید کن و از این تخفیف ویژه استفاده کن!\n\n🙏 ممنون که همراه نِی‌نگار هستی.`,
+        target: 'user',
+        targetUsers: [userId],
+        source: 'promo',
+        sourceId: code
+      });
+
+      return targetUser;
     },
 
     removeDiscount: async (_, { userId, code }, { user }) => {
