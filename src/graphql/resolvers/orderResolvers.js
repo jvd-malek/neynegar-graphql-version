@@ -181,15 +181,28 @@ const orderResolvers = {
         throw new Error("خطا در دریافت سفارشات آزاد");
       }
     },
-    salesAnalytics: async (_, { year = new Date().getFullYear() }, { user }) => {
+    salesAnalytics: async (_, { year: persianYear }, { user }) => {
       if (!user) throw new Error("Unauthorized");
       if (user.status !== "admin" && user.status !== "owner") throw new Error("Unauthorized");
 
       try {
-        const startOfYear = new Date(year, 0, 1);
-        const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+        // محاسبه سال شمسی جاری اگر سال داده نشده
+        let targetPersianYear = persianYear;
+        if (!targetPersianYear) {
+          const now = new Date();
+          const currentPersian = toPersianDate(now);
+          targetPersianYear = currentPersian.year;
+        }
 
-        // Get all orders for the year
+        // تبدیل سال شمسی به میلادی
+        const startGregorian = jalaali.toGregorian(targetPersianYear, 1, 1);
+        const endMonth = jalaali.isLeapJalaaliYear(targetPersianYear) ? 30 : 29;
+        const endGregorian = jalaali.toGregorian(targetPersianYear, 12, endMonth);
+
+        const startOfYear = new Date(startGregorian.gy, startGregorian.gm - 1, startGregorian.gd);
+        const endOfYear = new Date(endGregorian.gy, endGregorian.gm - 1, endGregorian.gd, 23, 59, 59);
+
+        // استفاده از lean() برای پرفورمنس بهتر
         const orders = await Order.find({
           status: { $nin: ["پرداخت نشده", "لغو شد"] },
           createdAt: {
@@ -197,126 +210,297 @@ const orderResolvers = {
             $lte: endOfYear.getTime()
           }
         })
-          .populate('userId', 'name phone')
+          .select('products totalPrice shippingCost isFreeOrder createdAt')
           .populate({
             path: 'products.productId',
+            select: 'title price cost totalSell weight'
           })
           .populate({
             path: 'products.packageId',
+            select: 'title totalSell products',
+            populate: {
+              path: 'products.product',
+              select: 'title price cost totalSell weight finalPrice'
+            }
           })
+          .lean()
+          .sort({ createdAt: 1 });
 
-
-        // Group orders by month
-        const monthlyData = {};
         const monthNames = [
           'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
           'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'
         ];
 
-        // Initialize all months
-        for (let i = 0; i < 12; i++) {
-          monthlyData[i] = {
-            month: monthNames[i],
-            year: year,
-            totalOrders: 0,
-            totalRevenue: 0,
-            freeOrders: 0,
-            paidOrders: 0,
-            freeOrderRevenue: 0,
-            paidOrderRevenue: 0,
-            products: []
-          };
-        }
+        // Initialize months with Map for better performance
+        const monthlyData = new Array(12).fill(null).map((_, i) => ({
+          month: monthNames[i],
+          year: targetPersianYear,
+          totalOrders: 0,
+          totalRevenue: 0,
+          totalShippingCost: 0,
+          totalProfit: 0,
+          freeOrders: 0,
+          paidOrders: 0,
+          freeOrderRevenue: 0,
+          paidOrderRevenue: 0,
+          products: new Map(),
+          packages: new Map()
+        }));
 
-        // کل محصولات برای آمار سالانه
-        const allProductStats = {};
+        const allProductStats = new Map();
+        const allPackageStats = new Map();
 
-        // Process each order
-        orders.forEach(order => {
-          const orderDate = new Date(Number(order.createdAt));
+        // پردازش سفارشات
+        for (const order of orders) {
+          const orderDate = new Date(order.createdAt);
           const persianDate = toPersianDate(orderDate);
 
-          // Use the month index (0-11)
+          if (persianDate.year !== targetPersianYear) continue;
+
           const monthIndex = persianDate.month;
+          const monthData = monthlyData[monthIndex];
 
-          // Convert from Rial to Toman (divide by 10)
           const priceInToman = order.totalPrice / 10;
+          const shippingCostInToman = order.shippingCost || 0;
 
-          monthlyData[monthIndex].totalOrders++;
-          monthlyData[monthIndex].totalRevenue += priceInToman;
+          monthData.totalOrders++;
+          monthData.totalRevenue += priceInToman;
+          monthData.totalShippingCost += shippingCostInToman;
 
           if (order.isFreeOrder) {
-            monthlyData[monthIndex].freeOrders++;
-            monthlyData[monthIndex].freeOrderRevenue += priceInToman;
+            monthData.freeOrders++;
+            monthData.freeOrderRevenue += priceInToman;
           } else {
-            monthlyData[monthIndex].paidOrders++;
-            monthlyData[monthIndex].paidOrderRevenue += priceInToman;
+            monthData.paidOrders++;
+            monthData.paidOrderRevenue += priceInToman;
           }
 
-          order.products.forEach(item => {
-            // آمار ماهانه
-            const pId = item.productId._id.toString();
-            let prod = monthlyData[monthIndex].products.find(p => p.product._id.toString() === pId);
-            if (!prod) {
-              prod = {
-                product: item.productId,
-                totalCount: 0,
-                totalRevenue: 0,
-                totalSell: item.productId.totalSell || 0
-              };
-              monthlyData[monthIndex].products.push(prod);
-            }
-            prod.totalCount += item.count;
-            prod.totalRevenue += item.price * item.count;
+          let orderProfit = 0;
 
-            // آمار سالانه
-            if (!allProductStats[pId]) {
-              allProductStats[pId] = {
-                product: item.productId,
-                totalCount: 0,
-                totalRevenue: 0,
-                totalSell: item.productId.totalSell || 0
-              };
-            }
-            allProductStats[pId].totalCount += item.count;
-            allProductStats[pId].totalRevenue += item.price * item.count;
-          });
-        });
+          for (const item of order.products) {
+            // پردازش محصول تکی
+            if (item.productId) {
+              const productId = item.productId._id.toString();
+              const productCost = item.productId.cost?.length
+                ? item.productId.cost[item.productId.cost.length - 1].cost
+                : 0;
+              const productRevenue = (item.price * item.count);
+              const productProfit = productRevenue - (productCost * item.count);
 
-        // مرتب‌سازی محصولات هر ماه
-        Object.values(monthlyData).forEach(month => {
-          month.products.sort((a, b) => {
-            if (b.totalCount === a.totalCount) {
-              return b.totalSell - a.totalSell;
-            }
-            return b.totalCount - a.totalCount;
-          });
-        });
+              orderProfit += productProfit;
 
-        // مرتب‌سازی محصولات کل سال
-        let topProducts = Object.values(allProductStats);
-        topProducts.sort((a, b) => {
-          if (b.totalCount === a.totalCount) {
-            return b.totalSell - a.totalSell;
+              // آمار ماهانه
+              let prodStats = monthData.products.get(productId);
+              if (!prodStats) {
+                prodStats = {
+                  product: item.productId,
+                  totalCount: 0,
+                  totalRevenue: 0,
+                  totalProfit: 0,
+                  allTimeSales: item.productId.totalSell || 0
+                };
+                monthData.products.set(productId, prodStats);
+              }
+              prodStats.totalCount += item.count;
+              prodStats.totalRevenue += productRevenue;
+              prodStats.totalProfit += productProfit;
+
+              // آمار سالانه
+              let yearStats = allProductStats.get(productId);
+              if (!yearStats) {
+                yearStats = {
+                  product: item.productId,
+                  totalCount: 0,
+                  totalRevenue: 0,
+                  totalProfit: 0,
+                  allTimeSales: item.productId.totalSell || 0
+                };
+                allProductStats.set(productId, yearStats);
+              }
+              yearStats.totalCount += item.count;
+              yearStats.totalRevenue += productRevenue;
+              yearStats.totalProfit += productProfit;
+            }
+            // پردازش پکیج
+            else if (item.packageId) {
+              const packageId = item.packageId._id.toString();
+              const packageRevenue = (item.price * item.count);
+              let packageProfit = 0;
+
+              // آمار ماهانه پکیج
+              let pkgStats = monthData.packages.get(packageId);
+              if (!pkgStats) {
+                pkgStats = {
+                  package: item.packageId,
+                  totalCount: 0,
+                  totalRevenue: 0,
+                  totalProfit: 0,
+                  allTimeSales: item.packageId.totalSell || 0
+                };
+                monthData.packages.set(packageId, pkgStats);
+              }
+              pkgStats.totalCount += item.count;
+              pkgStats.totalRevenue += packageRevenue;
+
+              // آمار سالانه پکیج
+              let yearPkgStats = allPackageStats.get(packageId);
+              if (!yearPkgStats) {
+                yearPkgStats = {
+                  package: item.packageId,
+                  totalCount: 0,
+                  totalRevenue: 0,
+                  totalProfit: 0,
+                  allTimeSales: item.packageId.totalSell || 0
+                };
+                allPackageStats.set(packageId, yearPkgStats);
+              }
+              yearPkgStats.totalCount += item.count;
+              yearPkgStats.totalRevenue += packageRevenue;
+
+              // پردازش محصولات داخل پکیج
+              if (item.packageId.products) {
+                for (const pkgProduct of item.packageId.products) {
+                  if (!pkgProduct.product) continue;
+
+                  const innerProductId = pkgProduct.product._id.toString();
+                  const quantityInPackage = pkgProduct.quantity * item.count;
+                  const innerProductCost = pkgProduct.product.cost?.length
+                    ? pkgProduct.product.cost[pkgProduct.product.cost.length - 1].cost
+                    : 0;
+                  const innerProductRevenue = (pkgProduct.product.finalPrice || 0) * quantityInPackage;
+                  const innerProductProfit = innerProductRevenue - (innerProductCost * quantityInPackage);
+
+                  packageProfit += innerProductProfit;
+
+                  // آمار ماهانه محصول داخل پکیج
+                  let innerStats = monthData.products.get(innerProductId);
+                  if (!innerStats) {
+                    innerStats = {
+                      product: pkgProduct.product,
+                      totalCount: 0,
+                      totalRevenue: 0,
+                      totalProfit: 0,
+                      allTimeSales: pkgProduct.product.totalSell || 0
+                    };
+                    monthData.products.set(innerProductId, innerStats);
+                  }
+                  innerStats.totalCount += quantityInPackage;
+                  innerStats.totalRevenue += innerProductRevenue;
+                  innerStats.totalProfit += innerProductProfit;
+
+                  // آمار سالانه محصول داخل پکیج
+                  let yearInnerStats = allProductStats.get(innerProductId);
+                  if (!yearInnerStats) {
+                    yearInnerStats = {
+                      product: pkgProduct.product,
+                      totalCount: 0,
+                      totalRevenue: 0,
+                      totalProfit: 0,
+                      allTimeSales: pkgProduct.product.totalSell || 0
+                    };
+                    allProductStats.set(innerProductId, yearInnerStats);
+                  }
+                  yearInnerStats.totalCount += quantityInPackage;
+                  yearInnerStats.totalRevenue += innerProductRevenue;
+                  yearInnerStats.totalProfit += innerProductProfit;
+                }
+              }
+
+              pkgStats.totalProfit += packageProfit;
+              yearPkgStats.totalProfit += packageProfit;
+              orderProfit += packageProfit;
+            }
           }
-          return b.totalCount - a.totalCount;
+
+          monthData.totalProfit += orderProfit;
+        }
+
+        // تبدیل Map به Array و مرتب‌سازی
+        const monthlyDataArray = monthlyData.map(month => {
+          
+            // محصولات برتر ماه - فقط ۱۰ تای اول
+          const products = Array.from(month.products.values())
+            .sort((a, b) =>
+              b.totalProfit - a.totalProfit ||
+              b.totalCount - a.totalCount ||
+              b.allTimeSales - a.allTimeSales
+            )
+            .slice(0, 10);
+
+          // پکیج‌های برتر ماه - فقط ۱۰ تای اول
+          const packages = Array.from(month.packages.values())
+            .sort((a, b) =>
+              b.totalProfit - a.totalProfit ||
+              b.totalCount - a.totalCount ||
+              b.allTimeSales - a.allTimeSales
+            )
+            .slice(0, 10);
+
+          // محاسبه سود خالص و حاشیه سود
+          const netProfit = month.totalProfit - month.totalShippingCost;
+          const profitMargin = month.totalRevenue > 0 ? (month.totalProfit / month.totalRevenue) * 100 : 0;
+          const netProfitMargin = month.totalRevenue > 0 ? (netProfit / month.totalRevenue) * 100 : 0;
+
+          return {
+            month: month.month,
+            year: month.year,
+            totalOrders: month.totalOrders,
+            totalRevenue: month.totalRevenue,
+            totalShippingCost: month.totalShippingCost,
+            totalProfit: month.totalProfit,
+            netProfit,
+            profitMargin,
+            netProfitMargin,
+            freeOrders: month.freeOrders,
+            paidOrders: month.paidOrders,
+            freeOrderRevenue: month.freeOrderRevenue,
+            paidOrderRevenue: month.paidOrderRevenue,
+            products,
+            packages
+          };
         });
 
-        // Convert to array and calculate totals
-        const monthlyDataArray = Object.values(monthlyData);
-        const totalRevenue = monthlyDataArray.reduce((sum, month) => sum + month.totalRevenue, 0);
-        const totalOrders = monthlyDataArray.reduce((sum, month) => sum + month.totalOrders, 0);
-        const totalFreeOrders = monthlyDataArray.reduce((sum, month) => sum + month.freeOrders, 0);
-        const averageOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-        const freeOrderPercentage = totalOrders > 0 ? (totalFreeOrders / totalOrders) * 100 : 0;
+        // محصولات و پکیج‌های برتر سال
+        const topProducts = Array.from(allProductStats.values())
+          .sort((a, b) =>
+            b.totalProfit - a.totalProfit ||
+            b.totalCount - a.totalCount ||
+            b.allTimeSales - a.allTimeSales
+          ).slice(0, 10);
+
+        const topPackages = Array.from(allPackageStats.values())
+          .sort((a, b) =>
+            b.totalProfit - a.totalProfit ||
+            b.totalCount - a.totalCount ||
+            b.allTimeSales - a.allTimeSales
+          ).slice(0, 10);
+
+        // محاسبه مجموع‌های نهایی با یک پاس
+        let totalRevenue = 0, totalOrders = 0, totalFreeOrders = 0;
+        let totalShippingCostAll = 0, totalProfitAll = 0, totalNetProfit = 0;
+
+        for (const month of monthlyDataArray) {
+          totalRevenue += month.totalRevenue;
+          totalOrders += month.totalOrders;
+          totalFreeOrders += month.freeOrders;
+          totalShippingCostAll += month.totalShippingCost;
+          totalProfitAll += month.totalProfit;
+          totalNetProfit += month.netProfit;
+        }
 
         return {
           monthlyData: monthlyDataArray,
           totalRevenue,
           totalOrders,
-          averageOrderValue,
-          freeOrderPercentage,
-          topProducts
+          averageOrderValue: totalOrders > 0 ? totalRevenue / totalOrders : 0,
+          freeOrderPercentage: totalOrders > 0 ? (totalFreeOrders / totalOrders) * 100 : 0,
+          totalShippingCost: totalShippingCostAll,
+          totalProfit: totalProfitAll,
+          netProfit: totalNetProfit,
+          profitMargin: totalRevenue > 0 ? (totalProfitAll / totalRevenue) * 100 : 0,
+          netProfitMargin: totalRevenue > 0 ? (totalNetProfit / totalRevenue) * 100 : 0,
+          topProducts,
+          topPackages
         };
       } catch (error) {
         throw new Error("خطا در دریافت آمار فروش: " + error.message);

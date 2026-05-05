@@ -1,6 +1,6 @@
 {
   "name": "neynegar-backend",
-  "version": "2.2.0",
+  "version": "2.4.0",
   "description": "NeyNegar GraphQL Backend",
   "main": "src/index.js",
   "scripts": {

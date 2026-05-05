@@ -778,10 +778,18 @@ const types = gql`
 
   type MonthlyProductStats {
     product: Product
+    totalCount: Int
+    totalRevenue: Float
+    totalProfit: Float
+    allTimeSales: Int
+  }
+
+  type MonthlyPackageStats {
     package: Package
     totalCount: Int
     totalRevenue: Float
-    totalSell: Int
+    totalProfit: Float
+    allTimeSales: Int
   }
 
   type MonthlySalesData {
@@ -789,11 +797,17 @@ const types = gql`
     year: Int!
     totalOrders: Int!
     totalRevenue: Float!
+    totalShippingCost: Float!
+    totalProfit: Float!
+    netProfit: Float!
+    profitMargin: Float!
+    netProfitMargin: Float!
     freeOrders: Int!
     paidOrders: Int!
     freeOrderRevenue: Float!
     paidOrderRevenue: Float!
     products: [MonthlyProductStats!]!
+    packages: [MonthlyPackageStats!]!
   }
 
   type SalesAnalytics {
@@ -802,7 +816,13 @@ const types = gql`
     totalOrders: Int!
     averageOrderValue: Float!
     freeOrderPercentage: Float!
+    totalShippingCost: Float!
+    totalProfit: Float!
+    netProfit: Float!
+    profitMargin: Float!
+    netProfitMargin: Float!
     topProducts: [MonthlyProductStats!]!
+    topPackages: [MonthlyPackageStats!]!
   }
 
   # Package Types

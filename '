@@ -1,0 +1,92 @@
+[33mcommit 0ee5ad5a7803b871a1d4f9a64b747ce1fb75cd85[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Tue May 5 00:14:02 2026 +0430
+
+    feat: add FAQ template system and product features
+    
+    - Add FAQTemplate model with category grouping
+    - Replace embedded FAQs with faqTemplateIds reference in Product model
+    - Add CRUD operations for FAQ templates
+    - Add product features (key-value pairs) to Product schema
+    - Add mutations for managing product features and FAQ templates
+    - Add product features to create/update product mutations
+    - Add virtual field for populating FAQ templates in Product
+    - Add validations for duplicate questions and feature keys
+    - Update GraphQL types, queries, and mutations
+    - Add resolver for Product.faqs field
+
+[33mcommit 1d41c145ea32aadbb6d854052007acfaaf0bac4a[m
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Sun May 3 15:42:20 2026 +0430
+
+    feat: implement polymorphic comment target with dynamic populate
+    
+    - Replace fixed productId/articleId fields with polymorphic
+       schema supporting Product, Article,
+      Course and Package entities.
+    - Update all comment resolvers:
+      * Query: refactor commentsByProduct, commentsByArticle,
+        commentsByPackage to use target.type/target.refId.
+      * Mutation: createComment now validates and builds target
+        from input.target.
+      * Add Comment.target field resolver for dynamic populate
+        of referenced entity.
+    - Update GraphQL types: remove productId/articleId from
+      Comment type, add CommentsTarget and CommentTargetInput.
+    - Add proper indexes for target.type + target.refId.
+    
+    BREAKING CHANGE: Comment schema no longer contains productId
+    or articleId. Use target: { type, refId } instead.
+
+[33mcommit 2bd54117e91aa211eaed3e026f298d2ffce214c0[m
+Merge: c4be25e d323a4b
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Sun Apr 26 01:14:51 2026 +0430
+
+    Merge branch 'main' of https://github.com/jvd-malek/neynegar-graphql-version
+
+[33mcommit c4be25e15262d7cf646e552b1c74bb02565b7370[m
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Fri Apr 24 00:38:43 2026 +0430
+
+    Feat: Added Package system, fixed critical bugs, and enhanced order logic
+    
+        • Introduced Package model with full CRUD operations and GraphQL integration
+        • Extended User basket to support both Product and Package items
+        • Updated Order and Checkout resolvers to handle mixed basket types
+        • Added Package availability virtual fields (isAvailable, maxAvailable)
+        • Fixed inventory reduction logic for Package contents during order verification
+        • Fixed free order creation to properly handle Package stock updates
+        • Enhanced basket calculations to include Package weight and pricing
+        • Resolved population issues in checkout payment flow
+        • Cleaned up redundant code and improved resolver maintainability
+
+[33mcommit d323a4b0a57ebb16278bb5e410f7a611c563df26[m
+Author: javad malekian <143399559+jvd-malek@users.noreply.github.com>
+Date:   Wed Aug 13 17:50:17 2025 +0330
+
+    Update README.md
+
+[33mcommit d75012f87cb699066d620602c3040d73529b6045[m
+Author: javad malekian <143399559+jvd-malek@users.noreply.github.com>
+Date:   Wed Aug 6 11:40:55 2025 +0330
+
+    Update README.md
+
+[33mcommit 3f968cd60586f2fc292c6a35042211886e543099[m
+Author: javad malekian <143399559+jvd-malek@users.noreply.github.com>
+Date:   Wed Aug 6 11:39:49 2025 +0330
+
+    Update README.md
+
+[33mcommit 1d6e02de1a22d1427833850c5d3f1e5bb0a6da8b[m
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Wed Aug 6 11:13:30 2025 +0430
+
+    fixed several bugs
+
+[33mcommit 60e0d7802c0729fd91a647814800463db88682ec[m
+Author: jvd.malek <jvd.malek0079@gmail.com>
+Date:   Fri Jul 4 12:36:52 2025 +0430
+
+    first commit
